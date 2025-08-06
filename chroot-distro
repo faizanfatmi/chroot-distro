@@ -1,0 +1,1053 @@
+#!/system/bin/sh
+
+# Define color variables
+BRED='\033[1;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[1;32m'
+CYAN='\033[1;36m'
+BLUE='\033[1;34m'
+RST='\033[0m'
+
+PROGRAM_VERSION="1.0-beta"
+
+PROGRAM_NAME=$(basename "$(realpath "$0")")
+
+TERMUX_HOME="/data/data/com.termux/files/home"
+TERMUX_PREFIX="/data/data/com.termux/files/usr"
+
+# Base directory where script keeps runtime data
+RUNTIME_DIR=/data/local/chroot-distro
+
+# Where rootfs tarballs are downloaded.
+DOWNLOAD_CACHE_DIR="${RUNTIME_DIR}/dlcache"
+
+# Where extracted rootfs are stored.
+INSTALLED_ROOTFS_DIR="${RUNTIME_DIR}/installed-rootfs"
+
+# Default name servers.
+DEFAULT_PRIMARY_NAMESERVER="8.8.8.8"
+DEFAULT_SECONDARY_NAMESERVER="8.8.4.4"
+
+# PATH environment variable for distributions.
+DEFAULT_PATH_ENV="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/games:/usr/games:/system/bin:/system/xbin"
+
+BUSYBOXPATH="$(command -v busybox 2>/dev/null)"
+
+# variables to store distro information
+SUPPORTED_DISTRIBUTIONS="archlinux debian fedora ubuntu"
+
+# ensure that the expected version of busybox is used
+busybox() { "$BUSYBOXPATH" "$@"; }
+
+# ensure that busybox version of getopt is used
+getopt() { busybox getopt "$@"; }
+
+#############################################################################
+#
+# FUNCTION TO PRINT A MESSAGE TO CONSOLE
+#
+# Prints a given text string to stderr. Supports escape sequences.
+#
+#############################################################################
+
+msg() {
+    echo "$@" >&2
+}
+
+#############################################################################
+#
+# FUNCTION TO DETECT CPU ARCHITECTURE IN GIVEN DISTRIBUTION
+#
+# Check known executable(s) and return CPU architecture.
+#
+#############################################################################
+
+detect_cpu_arch() {
+    case "$(uname -m)" in
+    aarch64 | arm64) echo "aarch64" ;;
+    armv7l | armv6l | arm) echo "arm" ;;
+    x86_64 | amd64) echo "x86_64" ;;
+    i386 | i686) echo "i386" ;;
+    *) echo "unknown" ;;
+    esac
+}
+
+# Function to safely mount with error handling
+safe_mount() {
+    src="$1"
+    dst="$2"
+    if [ -e "$src" ]; then
+        mkdir -p "$(dirname "$dst")" 2>/dev/null || true
+        busybox mount --bind "$src" "$dst" 2>/dev/null || {
+            msg "${YELLOW}Warning: failed to mount $src to $dst${RST}"
+            return 1
+        }
+    fi
+}
+
+# Cleanup function to unmount everything
+command_unmount_system_points() {
+    distro_name="$1"
+    if [ -z "$distro_name" ] || [ ! -d "${INSTALLED_ROOTFS_DIR}/${distro_name}" ]; then
+        return 1
+    fi
+
+    # Unmount in reverse order
+    busybox umount "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/stderr" 2>/dev/null || true
+    busybox umount "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/stdout" 2>/dev/null || true
+    busybox umount "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/stdin" 2>/dev/null || true
+    busybox umount "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/fd" 2>/dev/null || true
+    busybox umount "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/random" 2>/dev/null || true
+    busybox umount "${INSTALLED_ROOTFS_DIR}/${distro_name}/sys" 2>/dev/null || true
+    busybox umount "${INSTALLED_ROOTFS_DIR}/${distro_name}/proc" 2>/dev/null || true
+    busybox umount "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev" 2>/dev/null || true
+
+    # Unmount any additional custom mounts (this is simplified)
+    busybox umount "${INSTALLED_ROOTFS_DIR}/${distro_name}/tmp" 2>/dev/null || true
+    busybox umount "${INSTALLED_ROOTFS_DIR}/${distro_name}/root" 2>/dev/null || true
+}
+
+# Function to get distro information
+get_distro_info() {
+    distro_name="$1"
+    info_type="$2" # version, supported_arch, aarch64_url, arm_url
+
+    case "$distro_name" in
+    "archlinux")
+        case "$info_type" in
+        "version") echo "archarm" ;;
+        "supported_arch") echo "aarch64 arm" ;;
+        "aarch64_url") echo "https://github.com/termux/proot-distro/releases/download/v4.22.1/archlinux-aarch64-pd-v4.22.1.tar.xz" ;;
+        "arm_url") echo "https://github.com/termux/proot-distro/releases/download/v4.22.1/archlinux-arm-pd-v4.22.1.tar.xz" ;;
+        esac
+        ;;
+    "debian")
+        case "$info_type" in
+        "version") echo "bookworm" ;;
+        "supported_arch") echo "aarch64 arm" ;;
+        "aarch64_url") echo "https://github.com/termux/proot-distro/releases/download/v4.17.3/debian-bookworm-aarch64-pd-v4.17.3.tar.xz" ;;
+        "arm_url") echo "https://github.com/termux/proot-distro/releases/download/v4.17.3/debian-bookworm-arm-pd-v4.17.3.tar.xz" ;;
+        esac
+        ;;
+    "fedora")
+        case "$info_type" in
+        "version") echo "42" ;;
+        "supported_arch") echo "aarch64" ;;
+        "aarch64_url") echo "https://github.com/termux/proot-distro/releases/download/v4.24.0/fedora-aarch64-pd-v4.24.0.tar.xz" ;;
+        "arm_url") echo "" ;; # Not supported
+        esac
+        ;;
+    "ubuntu")
+        case "$info_type" in
+        "version") echo "noble" ;;
+        "supported_arch") echo "aarch64 arm" ;;
+        "aarch64_url") echo "https://github.com/termux/proot-distro/releases/download/v4.18.0/ubuntu-noble-aarch64-pd-v4.18.0.tar.xz" ;;
+        "arm_url") echo "https://github.com/termux/proot-distro/releases/download/v4.18.0/ubuntu-noble-arm-pd-v4.18.0.tar.xz" ;;
+        esac
+        ;;
+    *)
+        echo ""
+        ;;
+    esac
+}
+#############################################################################
+#
+# FUNCTION TO INSTALL THE SPECIFIED DISTRIBUTION
+#
+#############################################################################
+
+command_install() {
+    while [ $# -ge 1 ]; do
+        case "$1" in
+        --)
+            shift 1
+            break
+            ;;
+        -h | --help)
+            command_install_help
+            return 0
+            ;;
+        -*)
+            msg
+            msg "${BRED}Error: got unknown option '${YELLOW}${1}${BRED}'.${RST}"
+            command_install_help
+            return 1
+            ;;
+        *)
+            if [ -z "${distro_name-}" ]; then
+                if [ -z "$1" ]; then
+                    msg
+                    msg "${BRED}Error: distribution alias argument should not be empty.${RST}"
+                    command_install_help
+                    return 1
+                fi
+                distro_name="$1"
+            else
+                msg
+                msg "${BRED}Error: got excessive positional argument '${YELLOW}${1}${BRED}'. Note that distribution can be specified only once.${RST}"
+                command_install_help
+                return 1
+            fi
+            ;;
+        esac
+        shift 1
+    done
+
+    # Check if distribution name is provided
+    if [ -z "$distro_name" ]; then
+        msg
+        msg "${BRED}Error: distribution alias is not specified.${RST}"
+        command_install_help
+        return 1
+    fi
+
+    # Check if distribution is supported
+    distro_found=false
+    for supported_distro in $SUPPORTED_DISTRIBUTIONS; do
+        if [ "$supported_distro" = "$distro_name" ]; then
+            distro_found=true
+            break
+        fi
+    done
+
+    if [ "$distro_found" = "false" ]; then
+        msg
+        msg "${BRED}Error: unknown distribution '${YELLOW}${distro_name}${BRED}'.${RST}"
+        msg
+        msg "${CYAN}Run '${GREEN}${PROGRAM_NAME} list${CYAN}' to see available distributions.${RST}"
+        msg
+        return 1
+    fi
+
+    # Get current CPU architecture
+    current_arch=$(detect_cpu_arch)
+
+    # Check if current architecture is supported for this distro
+    supported_archs=$(get_distro_info "$distro_name" "supported_arch")
+    arch_supported=false
+    for arch in $supported_archs; do
+        if [ "$arch" = "$current_arch" ]; then
+            arch_supported=true
+            break
+        fi
+    done
+
+    if [ "$arch_supported" = "false" ]; then
+        msg
+        msg "${BRED}Error: distribution '${YELLOW}${distro_name}${BRED}' is not supported on '${YELLOW}${current_arch}${BRED}' architecture.${RST}"
+        msg
+        msg "${CYAN}Supported architectures for ${distro_name}: ${YELLOW}${supported_archs}${RST}"
+        msg
+        return 1
+    fi
+
+    # Set the appropriate tarball URL based on architecture
+    case "$current_arch" in
+    "aarch64")
+        TARBALL_URL=$(get_distro_info "$distro_name" "aarch64_url")
+        ;;
+    "arm")
+        TARBALL_URL=$(get_distro_info "$distro_name" "arm_url")
+        ;;
+    *)
+        msg
+        msg "${BRED}Error: unsupported architecture '${YELLOW}${current_arch}${BRED}'.${RST}"
+        return 1
+        ;;
+    esac
+
+    # Check if URL is available
+    if [ -z "$TARBALL_URL" ]; then
+        msg
+        msg "${BRED}Error: no download URL available for '${YELLOW}${distro_name}${BRED}' on '${YELLOW}${current_arch}${BRED}' architecture.${RST}"
+        return 1
+    fi
+
+    # Set tarball strip option (assuming 1 for most distributions)
+    TARBALL_STRIP_OPT="1"
+
+    if [ -d "${INSTALLED_ROOTFS_DIR}/${distro_name}" ]; then
+        msg
+        msg "${BRED}Error: distribution '${YELLOW}${distro_name}${BRED}' is already installed.${RST}"
+        msg
+        msg "${CYAN}Log in:     ${GREEN}${PROGRAM_NAME} login ${distro_name}${RST}"
+        msg "${CYAN}Reinstall:  ${GREEN}${PROGRAM_NAME} reset ${distro_name}${RST}"
+        msg "${CYAN}Uninstall:  ${GREEN}${PROGRAM_NAME} remove ${distro_name}${RST}"
+        msg
+        return 1
+    fi
+
+    # Create installation directory
+    if [ ! -d "${INSTALLED_ROOTFS_DIR}/${distro_name}" ]; then
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Creating installation directory...${RST}"
+        mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}"
+    fi
+
+    if [ ! -d "$DOWNLOAD_CACHE_DIR" ]; then
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Creating directory '$DOWNLOAD_CACHE_DIR'...${RST}"
+        mkdir -p "$DOWNLOAD_CACHE_DIR"
+    fi
+
+    tarball_name=$(basename "${TARBALL_URL}")
+
+    if [ ! -f "${DOWNLOAD_CACHE_DIR}/${tarball_name}" ]; then
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Downloading rootfs tarball...${RST}"
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}URL: ${TARBALL_URL}${RST}"
+
+        # Using temporary file as script can't distinguish the partially
+        # downloaded file from the complete. Useful in case if curl will
+        # fail for some reason.
+        msg
+        rm -f "${DOWNLOAD_CACHE_DIR}/${tarball_name}.tmp"
+        if ! curl --disable --fail --retry 5 --retry-connrefused --retry-delay 5 --location \
+            --output "${DOWNLOAD_CACHE_DIR}/${tarball_name}.tmp" "${TARBALL_URL}"; then
+            msg
+            msg "${BLUE}[${BRED}!${BLUE}] ${CYAN}Download failure, please check your network connection.${RST}"
+            rm -f "${DOWNLOAD_CACHE_DIR}/${tarball_name}.tmp"
+            return 1
+        fi
+        msg
+
+        # If curl finished successfully, rename file to original.
+        mv -f "${DOWNLOAD_CACHE_DIR}/${tarball_name}.tmp" "${DOWNLOAD_CACHE_DIR}/${tarball_name}"
+    else
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Using cached rootfs tarball...${RST}"
+    fi
+
+    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Extracting rootfs, please wait...${RST}"
+    tar -C "${INSTALLED_ROOTFS_DIR}/${distro_name}" \
+        --strip-components="${TARBALL_STRIP_OPT}" \
+        -xf "${DOWNLOAD_CACHE_DIR}/${tarball_name}" \
+        2>&1 | grep -v "/linkerconfig/" >&2
+
+    # If no /etc in rootfs, terminate installation.
+    # This usually indicates that downloaded distribution tarball doesn't contain
+    # actual rootfs, wrong tar strip option was specified or the distribution has
+    # high grade of customization and doesn't respect FHS standard.
+    if [ ! -e "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc" ]; then
+        msg
+        msg "${BRED}Error: the rootfs of distribution '${YELLOW}${distro_name}${BRED}' has unexpected structure (no /etc directory). ${RST}"
+        msg
+        return 1
+    fi
+
+    # Don't touch these variables.
+    # TERM is being inherited from currect environment. Otherwise it is being
+    # set to xterm-256color (Termux app default).
+    cat <<-EOF >>"${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/environment"
+		LANG=en_US.UTF-8
+		MOZ_FAKE_NO_SANDBOX=1
+		PATH=${DEFAULT_PATH_ENV}
+		PULSE_SERVER=127.0.0.1
+		TERM=${TERM-xterm-256color}
+		TMPDIR=/tmp
+		EOF
+
+    # Fix PATH in some configuration files.
+    for f in /etc/bash.bashrc /etc/profile /etc/login.defs; do
+        [ ! -e "${INSTALLED_ROOTFS_DIR}/${distro_name}${f}" ] && continue
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Updating PATH in '${INSTALLED_ROOTFS_DIR}/${distro_name}${f}' if needed...${RST}"
+        sed -i -E "s@\<(PATH=)(\"?[^\"[:space:]]+(\"|\$|\>))@\1\"${DEFAULT_PATH_ENV}\"@g" \
+            "${INSTALLED_ROOTFS_DIR}/${distro_name}${f}"
+    done
+    unset f
+
+    # Default /etc/resolv.conf may be empty or unsuitable for use.
+    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Creating file '${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/resolv.conf'...${RST}"
+    rm -f "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/resolv.conf"
+    cat <<-EOF >"${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/resolv.conf"
+		nameserver ${DEFAULT_PRIMARY_NAMESERVER}
+		nameserver ${DEFAULT_SECONDARY_NAMESERVER}
+		EOF
+
+    # Default /etc/hosts may be empty or incomplete.
+    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Creating file '${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/hosts'...${RST}"
+    chmod u+rw "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/hosts" >/dev/null 2>&1 || true
+    cat <<-EOF >"${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/hosts"
+		# IPv4.
+		127.0.0.1   localhost.localdomain localhost
+
+		# IPv6.
+		::1         localhost.localdomain localhost ip6-localhost ip6-loopback
+		fe00::0     ip6-localnet
+		ff00::0     ip6-mcastprefix
+		ff02::1     ip6-allnodes
+		ff02::2     ip6-allrouters
+		ff02::3     ip6-allhosts
+		EOF
+
+    chmod u+rw "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/passwd" \
+        "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/shadow" \
+        "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/group" \
+        "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/gshadow" >/dev/null 2>&1 || true
+
+    msg
+    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Installation completed successfully!${RST}"
+    msg
+    msg "${CYAN}Log in with: ${GREEN}${PROGRAM_NAME} login ${distro_name}${RST}"
+    msg
+}
+
+chroot_distro_warn_if_unsupported_busybox() {
+    current_version=$(busybox | grep -oE 'v[0-9]+(\.[0-9]+)+' | sed 's/v//')
+    if [ "$(echo "$current_version" | sed 's/\.//g')" -lt "1361" ]; then
+        msg "The installed BusyBox version ($current_version) is outdated and may cause compatibility issues."
+        msg "Upgrade to BusyBox v1.36.1 or newer for optimal performance."
+    fi
+}
+
+command_login_help() {
+    echo "Usage: ${PROGRAM_NAME} login [OPTIONS] DISTRIBUTION"
+    echo ""
+    echo "Options:"
+    echo "  --user USERNAME        Login as specified user"
+    echo "  --work-dir PATH        Set working directory"
+    echo "  --shared-tmp           Share host tmp directory"
+    echo "  --termux-home          Mount Termux home directory"
+    echo "  --bind PATH[:TARGET]   Bind mount additional paths"
+    echo "  --env VAR=VALUE        Set environment variable"
+    echo "  --help                 Show this help"
+}
+
+#############################################################################
+#
+# FUNCTION TO START SHELL OR EXECUTE COMMAND
+#
+# Starts root shell inside the rootfs of specified Linux distribution.
+#
+# If '--' with further arguments was specified, then execute command line
+# given after '--' as root user without starting interactive shell.
+#
+#############################################################################
+
+command_login() {
+    use_termux_home=false
+    make_termux_tmp_shared=false
+    custom_fs_bindings=""
+    login_user="root"
+    login_wd=""
+    login_env_vars="PATH=${DEFAULT_PATH_ENV}"
+    distro_name=""
+
+    while [ $# -ge 1 ]; do
+        case "$1" in
+        --)
+            shift 1
+            break
+            ;;
+        --help)
+            command_login_help
+            return 0
+            ;;
+        --termux-home)
+            use_termux_home=true
+            ;;
+        --shared-tmp)
+            make_termux_tmp_shared=true
+            ;;
+        --bind)
+            if [ $# -ge 2 ]; then
+                shift 1
+
+                if [ -z "$1" ]; then
+                    msg
+                    msg "${BRED}Error: argument to option '${YELLOW}--bind${BRED}' should not be empty.${RST}"
+                    command_login_help
+                    return 1
+                fi
+
+                if [ -z "$custom_fs_bindings" ]; then
+                    custom_fs_bindings="$1"
+                else
+                    custom_fs_bindings="${custom_fs_bindings} $1"
+                fi
+            else
+                msg
+                msg "${BRED}Error: option '${YELLOW}--bind${BRED}' requires an argument.${RST}"
+                command_login_help
+                return 1
+            fi
+            ;;
+        --user)
+            if [ $# -ge 2 ]; then
+                shift 1
+
+                if [ -z "$1" ]; then
+                    msg
+                    msg "${BRED}Error: argument to option '${YELLOW}--user${BRED}' should not be empty.${RST}"
+                    command_login_help
+                    return 1
+                fi
+
+                login_user="$1"
+            else
+                msg
+                msg "${BRED}Error: option '${YELLOW}--user${BRED}' requires an argument.${RST}"
+                command_login_help
+                return 1
+            fi
+            ;;
+        --work-dir)
+            if [ $# -ge 2 ]; then
+                shift 1
+
+                if [ -z "$1" ]; then
+                    msg
+                    msg "${BRED}Error: argument to option '${YELLOW}--work-dir${BRED}' should not be empty.${RST}"
+                    command_login_help
+                    return 1
+                fi
+
+                login_wd="$1"
+            else
+                msg
+                msg "${BRED}Error: option '${YELLOW}--work-dir${BRED}' requires an argument.${RST}"
+                command_login_help
+                return 1
+            fi
+            ;;
+        --env)
+            if [ $# -ge 2 ]; then
+                shift 1
+
+                if [ -z "$1" ]; then
+                    msg
+                    msg "${BRED}Error: argument to option '${YELLOW}--env${BRED}' should not be empty.${RST}"
+                    command_login_help
+                    return 1
+                fi
+
+                login_env_vars+=("$1")
+            else
+                msg
+                msg "${BRED}Error: option '${YELLOW}--env${BRED}' requires an argument.${RST}"
+                command_login_help
+                return 1
+            fi
+            ;;
+        -*)
+            msg
+            msg "${BRED}Error: got unknown option '${YELLOW}${1}${BRED}'.${RST}"
+            command_login_help
+            return 1
+            ;;
+        *)
+            if [ -z "$distro_name" ]; then
+                if [ -z "$1" ]; then
+                    msg
+                    msg "${BRED}Error: distribution alias argument should not be empty.${RST}"
+                    command_login_help
+                    return 1
+                fi
+                distro_name="$1"
+            else
+                msg
+                msg "${BRED}Error: got excessive positional argument '${YELLOW}${1}${BRED}'. Note that distribution can be specified only once.${RST}"
+                command_login_help
+                return 1
+            fi
+            ;;
+        esac
+        shift 1
+    done
+
+    if [ -z "$distro_name" ]; then
+        msg
+        msg "${BRED}Error: distribution alias is not specified.${RST}"
+        command_login_help
+        return 1
+    fi
+
+    # Check if distribution is installed
+    if [ ! -d "${INSTALLED_ROOTFS_DIR}/${distro_name}" ]; then
+        msg
+        msg "${BRED}Error: distribution '${YELLOW}${distro_name}${BRED}' is not installed.${RST}"
+        msg
+        return 1
+    fi
+
+    # It's hard to work without /etc/passwd.
+    if [ ! -e "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/passwd" ]; then
+        msg "${BRED}Error: the selected distribution doesn't have /etc/passwd.${RST}"
+        return 1
+    fi
+
+    # Catch invalid specified user before login command will be executed.
+    if ! grep -q "^${login_user}:" "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/passwd" >/dev/null 2>&1; then
+        msg "${BRED}Error: no user '${YELLOW}${login_user}${BRED}' defined in /etc/passwd of distribution.${RST}"
+        return 1
+    fi
+
+    login_uid=$(grep "^${login_user}:" "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/passwd" | cut -d ':' -f 3)
+    if [ -z "$login_uid" ]; then
+        msg "${BRED}Error: failed to retrieve the id of user '${YELLOW}${login_user}${BRED}' from /etc/passwd of distribution.${RST}"
+        return 1
+    fi
+    login_gid=$(grep "^${login_user}:" "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/passwd" | cut -d ':' -f 4)
+    if [ -z "$login_gid" ]; then
+        msg "${BRED}Error: failed to retrieve the primary group id of user '${YELLOW}${login_user}${BRED}' from /etc/passwd of distribution.${RST}"
+        return 1
+    fi
+    login_home=$(grep "^${login_user}:" "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/passwd" | cut -d ':' -f 6)
+    if [ -z "$login_home" ]; then
+        msg "${BRED}Error: failed to retrieve the home of user '${YELLOW}${login_user}${BRED}' from /etc/passwd of distribution.${RST}"
+        return 1
+    fi
+    if [ -z "$login_wd" ]; then
+        login_wd="$login_home"
+    fi
+    login_shell=$(grep "^${login_user}:" "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/passwd" | cut -d ':' -f 7)
+    if [ -z "$login_shell" ]; then
+        msg "${BRED}Error: failed to retrieve the shell of user '${YELLOW}${login_user}${BRED}' from /etc/passwd of distribution.${RST}"
+        return 1
+    fi
+
+    # Handle /etc/environment.
+    if [ -e "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/environment" ]; then
+        #FIX: mapfile isn't available in android toybox / busybox so i have to find a alternative
+        #FIX: need to optiomized it for POSIX sh
+        mapfile -t -O "${#login_env_vars[@]}" login_env_vars < <(
+            grep -P '^[A-Za-z_][A-Za-z0-9_]+=.+' "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/environment" |
+                sed -E \
+                    -e "s/^([^=]+=)['\"]/\1/g" \
+                    -e "s/['\"]\$//g" \
+                    -e "/^[^=]+\$/d"
+        )
+    fi
+
+    # Create necessary directories if they don't exist
+    if [ ! -d "${INSTALLED_ROOTFS_DIR}/${distro_name}/tmp" ]; then
+        mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/tmp"
+        chmod 1777 "${INSTALLED_ROOTFS_DIR}/${distro_name}/tmp"
+    fi
+
+    # FIX: bind ${INSTALLED_ROOTFS_DIR}/${distro_name}/tmp:/dev/shm need to add this
+    # Ensure mount points exist
+    mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev"
+    mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/proc"
+    mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/sys"
+
+    # Mount core file systems
+    safe_mount "/dev" "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev"
+    safe_mount "/proc" "${INSTALLED_ROOTFS_DIR}/${distro_name}/proc"
+    safe_mount "/sys" "${INSTALLED_ROOTFS_DIR}/${distro_name}/sys"
+
+    # Bind mount specific files
+    safe_mount "/dev/urandom" "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/random"
+    safe_mount "/proc/self/fd" "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/fd"
+    safe_mount "/proc/self/fd/0" "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/stdin"
+    safe_mount "/proc/self/fd/1" "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/stdout"
+    safe_mount "/proc/self/fd/2" "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/stderr"
+
+    # Mount Android storage directories
+    if [ -d "/sdcard" ]; then
+        mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/sdcard"
+        safe_mount "/sdcard" "${INSTALLED_ROOTFS_DIR}/${distro_name}/sdcard"
+    fi
+
+    # Mount /storage/* directories
+    for storage_dir in /storage/*; do
+        if [ -d "$storage_dir" ]; then
+            mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}${storage_dir}"
+            safe_mount "$storage_dir" "${INSTALLED_ROOTFS_DIR}/${distro_name}${storage_dir}"
+        fi
+    done
+
+    # Use Termux home directory if requested.
+    if [ "$use_termux_home" = "true" ]; then
+        if [ "$login_user" = "root" ]; then
+            mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/root"
+            safe_mount "$TERMUX_HOME" "${INSTALLED_ROOTFS_DIR}/${distro_name}/root"
+        else
+            user_home="$login_home"
+            if [ -z "$user_home" ]; then
+                user_home="/home/${login_user}"
+            fi
+            mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}${user_home}"
+            safe_mount "$TERMUX_HOME" "${INSTALLED_ROOTFS_DIR}/${distro_name}${user_home}"
+        fi
+    fi
+
+    # Bind the tmp folder from the host system to the guest system
+    if [ "$make_termux_tmp_shared" = "true" ]; then
+        safe_mount "${TERMUX_PREFIX}/tmp" "${INSTALLED_ROOTFS_DIR}/${distro_name}/tmp"
+    fi
+
+    # Bind custom file systems
+    if [ -n "$custom_fs_bindings" ]; then
+        for binding in $custom_fs_bindings; do
+            case "$binding" in
+            *:*)
+                src="${binding%:*}"
+                dst="${binding#*:}"
+                mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}${dst}"
+                safe_mount "$src" "${INSTALLED_ROOTFS_DIR}/${distro_name}${dst}"
+                ;;
+            *)
+                mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}${binding}"
+                safe_mount "$binding" "${INSTALLED_ROOTFS_DIR}/${distro_name}${binding}"
+                ;;
+            esac
+        done
+    fi
+
+    # Build environment arguments properly
+    # FIX: command like -- env DISPLAY=:0 apt update should be working but it's not
+    # Ex:- chroot-distro login --user "USERNAME" "distro_name" --shared-tmp --termux-home -- env DISPLAY=:0 sudo apt update
+    env_args=""
+    for env_var in $login_env_vars; do
+        env_args="$env_args $env_var"
+    done
+
+    # Enter chroot with clean environment
+    if [ "$login_user" != "root" ]; then
+        # For non-root users, we need to use su or similar after chroot
+        chroot "${INSTALLED_ROOTFS_DIR}/${distro_name}" /usr/bin/env -i \
+            "$env_args" \
+            "COLORTERM=${COLORTERM-}" \
+            "HOME=${login_home}" \
+            "USER=${login_user}" \
+            "PWD=${login_wd}" \
+            /bin/su -l "$login_user" -c "cd '${login_wd}' 2>/dev/null || cd '${login_home}' 2>/dev/null || cd /; exec ${login_shell} -l" "$@"
+    else
+        chroot "${INSTALLED_ROOTFS_DIR}/${distro_name}" /usr/bin/env -i \
+            "$env_args" \
+            "COLORTERM=${COLORTERM-}" \
+            "HOME=${login_home}" \
+            "USER=${login_user}" \
+            "PWD=${login_wd}" \
+            /bin/sh -c "cd '${login_wd}' 2>/dev/null || cd '${login_home}' 2>/dev/null || cd /; exec ${login_shell} -l" "$@"
+    fi
+}
+
+#############################################################################
+#
+# FUNCTION TO LIST THE SUPPORTED DISTRIBUTIONS
+#
+# Print the summary of available distributions and their installation
+# status. The information about distributions is read from plug-in files.
+#
+#############################################################################
+
+command_list() {
+    msg "${GREEN} Available distributions:${RST}"
+    msg
+
+    # Get current CPU architecture
+    current_arch=$(detect_cpu_arch)
+
+    # Check each supported distribution
+    for distro in $SUPPORTED_DISTRIBUTIONS; do
+        distro_version=$(get_distro_info "$distro" "version")
+        supported_archs=$(get_distro_info "$distro" "supported_arch")
+
+        # Check if current architecture is supported for this distro
+        arch_supported=false
+        for arch in $supported_archs; do
+            if [ "$arch" = "$current_arch" ]; then
+                arch_supported=true
+                break
+            fi
+        done
+
+        # Only show distributions that support current architecture
+        if [ "$arch_supported" = "true" ]; then
+            # Check if already installed
+            if [ -d "${INSTALLED_ROOTFS_DIR}/${distro}" ]; then
+                status_text="[installed]"
+            else
+                status_text="[not installed]"
+            fi
+
+            msg "  ${CYAN}* ${distro} ${BLUE}(${distro_version}) ${GREEN}${status_text}${RST}"
+        fi
+    done
+
+    msg
+    msg "${CYAN}Install selected one with: ${GREEN}${PROGRAM_NAME} install <alias>${RST}"
+    msg
+}
+
+#############################################################################
+#
+# FUNCTION TO CLEAR DOWNLOAD CACHE
+#
+# Delete all cached rootfs tarballs.
+#
+#############################################################################
+command_clear_cache() {
+    while [ $# -ge 1 ]; do
+        case "$1" in
+        -h | --help)
+            command_clear_cache_help
+            return 0
+            ;;
+        -*)
+            msg
+            msg "${BRED}Error: got unknown option '${YELLOW}${1}${BRED}'.${RST}"
+            command_clear_cache_help
+            return 1
+            ;;
+        *)
+            msg
+            msg "${BRED}Error: got excessive positional argument '${YELLOW}${1}${BRED}'. Note that tarball file path can be specified only once.${RST}"
+            command_clear_cache_help
+            return 1
+            ;;
+        esac
+        shift 1
+    done
+
+    # Check if cache directory exists
+    if [ ! -d "$DOWNLOAD_CACHE_DIR" ]; then
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Download cache directory does not exist.${RST}"
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Finished.${RST}"
+        return 0
+    fi
+
+    # Check if cache has any files
+    cache_files_count=$(find "$DOWNLOAD_CACHE_DIR" -type f 2>/dev/null | wc -l)
+    if [ "$cache_files_count" -eq 0 ]; then
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Download cache is empty.${RST}"
+    else
+        # Get cache size before clearing (using busybox du for consistency)
+        size_of_cache=""
+        if command -v busybox >/dev/null 2>&1; then
+            size_of_cache=$(busybox du -sh "$DOWNLOAD_CACHE_DIR" 2>/dev/null | cut -f1)
+        elif command -v du >/dev/null 2>&1; then
+            # Try different du options that might work on toybox
+            size_of_cache=$(du -sh "$DOWNLOAD_CACHE_DIR" 2>/dev/null | cut -f1) ||
+                size_of_cache=$(du -h "$DOWNLOAD_CACHE_DIR" 2>/dev/null | tail -1 | cut -f1) ||
+                size_of_cache="unknown"
+        else
+            size_of_cache="unknown"
+        fi
+
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Clearing cache files...${RST}"
+
+        # Find and delete files one by one for better error handling
+        find "$DOWNLOAD_CACHE_DIR" -type f 2>/dev/null | while IFS= read -r filename; do
+            if [ -n "$filename" ] && [ -f "$filename" ]; then
+                msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Deleting '$(basename "$filename")'${RST}"
+                rm -f "$filename"
+            fi
+        done
+
+        if [ "$size_of_cache" != "unknown" ] && [ -n "$size_of_cache" ]; then
+            msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Reclaimed ${size_of_cache} of disk space.${RST}"
+        else
+            msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Cache files removed successfully.${RST}"
+        fi
+    fi
+    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Finished.${RST}"
+}
+
+command_clear_cache_help() {
+    msg
+    msg "${BYELLOW}Usage: ${CYAN}${PROGRAM_NAME} ${GREEN}clear-cache${RST}"
+    msg
+    msg "${CYAN}Command aliases: ${GREEN}clear${CYAN}, ${GREEN}cl${RST}"
+    msg
+    msg "${CYAN}Remove all cached rootfs tarballs to reclaim disk space.${RST}"
+    msg
+    show_version
+    msg
+}
+
+#############################################################################
+#
+# FUNCTION TO UNINSTALL SPECIFIED DISTRIBUTION
+#
+# Delete the rootfs of given distribution.
+#
+#############################################################################
+
+command_remove() {
+    distro_name=""
+    while [ $# -ge 1 ]; do
+        case "$1" in
+        -h | --help)
+            command_remove_help
+            return 0
+            ;;
+        -*)
+            msg
+            msg "${BRED}Error: got unknown option '${YELLOW}${1}${BRED}'.${RST}"
+            command_remove_help
+            return 1
+            ;;
+        *)
+            if [ -z "${distro_name}" ]; then
+                if [ -z "$1" ]; then
+                    msg
+                    msg "${BRED}Error: distribution alias argument should not be empty.${RST}"
+                    command_remove_help
+                    return 1
+                fi
+                distro_name="$1"
+            else
+                msg
+                msg "${BRED}Error: got excessive positional argument '${YELLOW}${1}${BRED}'. Note that distribution can be specified only once.${RST}"
+                command_remove_help
+                return 1
+            fi
+            ;;
+        esac
+        shift 1
+    done
+
+    if [ -z "${distro_name}" ]; then
+        msg
+        msg "${BRED}Error: distribution alias is not specified.${RST}"
+        command_remove_help
+        return 1
+    fi
+
+    # Check if distribution is supported
+    distro_found=false
+    for supported_distro in $SUPPORTED_DISTRIBUTIONS; do
+        if [ "$supported_distro" = "$distro_name" ]; then
+            distro_found=true
+            break
+        fi
+    done
+
+    if [ "$distro_found" = "false" ]; then
+        msg
+        msg "${BRED}Error: unknown distribution '${YELLOW}${distro_name}${BRED}' was requested to be removed.${RST}"
+        msg
+        msg "${CYAN}View supported distributions by: ${GREEN}${PROGRAM_NAME} list${RST}"
+        msg
+        return 1
+    fi
+
+    if [ ! -d "${INSTALLED_ROOTFS_DIR}/${distro_name}" ]; then
+        msg
+        msg "${BRED}Error: distribution '${YELLOW}${distro_name}${BRED}' is not installed.${RST}"
+        msg
+        return 1
+    fi
+
+    # Get distribution version for display
+    distro_version=$(get_distro_info "$distro_name" "version")
+    if [ -n "$distro_version" ]; then
+        display_name="${distro_name} (${distro_version})"
+    else
+        display_name="$distro_name"
+    fi
+
+    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Wiping the rootfs of ${YELLOW}${display_name}${CYAN}...${RST}"
+
+    # Attempt to restore permissions so directory can be removed without issues.
+    # Use busybox chmod if available for better compatibility
+    if command -v busybox >/dev/null 2>&1; then
+        busybox chmod -R u+rwx "${INSTALLED_ROOTFS_DIR}/${distro_name}" >/dev/null 2>&1 || true
+    else
+        chmod -R u+rwx "${INSTALLED_ROOTFS_DIR}/${distro_name}" >/dev/null 2>&1 || true
+    fi
+
+    # Ensure we don't accidentally remove wrong directories
+    if [ -z "${INSTALLED_ROOTFS_DIR}" ] || [ -z "${distro_name}" ]; then
+        msg "${BLUE}[${BRED}!${BLUE}] ${CYAN}Error: Invalid directory path. Aborting removal for safety.${RST}"
+        return 1
+    fi
+
+    # Additional safety check - ensure we're removing from the correct base directory
+    case "${INSTALLED_ROOTFS_DIR}/${distro_name}" in
+    "${RUNTIME_DIR}"/installed-rootfs/*)
+        # Safe path - within our runtime directory
+        ;;
+    *)
+        msg "${BLUE}[${BRED}!${BLUE}] ${CYAN}Error: Unsafe directory path detected. Aborting removal.${RST}"
+        return 1
+        ;;
+    esac
+
+    # Try to unmount the rootfs before removal
+    command_unmount_system_points "${distro_name}"
+
+    # Remove the rootfs directory
+    if rm -rf "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}"; then
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Finished.${RST}"
+    else
+        msg "${BLUE}[${BRED}!${BLUE}] ${CYAN}Finished with errors. Some files probably were not deleted.${RST}"
+        return 1
+    fi
+}
+
+command_remove_help() {
+    msg
+    msg "${BYELLOW}Usage: ${BCYAN}${PROGRAM_NAME} ${GREEN}remove ${CYAN}[${GREEN}DISTRIBUTION ALIAS${CYAN}]${RST}"
+    msg
+    msg "${CYAN}Command aliases: ${GREEN}rm${RST}"
+    msg
+    msg "${CYAN}Remove a specified Linux distribution.${RST}"
+    msg
+    msg "${CYAN}Options:${RST}"
+    msg
+    msg "  ${GREEN}--help               ${CYAN}- Show this help information.${RST}"
+    msg
+    msg "${CYAN}Be careful when using it because you will not be prompted for${RST}"
+    msg "${CYAN}confirmation and all data saved within the distribution will${RST}"
+    msg "${CYAN}instantly gone.${RST}"
+    msg
+    msg "${CYAN}Selected distribution should be referenced by alias which can be${RST}"
+    msg "${CYAN}obtained by this command: ${GREEN}${PROGRAM_NAME} list${RST}"
+    msg
+    show_version
+    msg
+}
+
+#############################################################################
+#
+# FUNCTION TO PRINT VERSION STRING
+#
+# Prints version & author information. Used in functions for displaying
+# usage info.
+#
+#############################################################################
+
+show_version() {
+    msg "${ICYAN}Proot-Distro v${PROGRAM_VERSION} by @sabamdarif.${RST}"
+}
+
+if [ $# -ge 1 ]; then
+    case "$1" in
+    -h | --help | help | hel | he | h)
+        shift 1
+        command_help
+        ;;
+    -v | --version)
+        shift 1
+        show_version
+        ;;
+    install | i | in | ins | add)
+        shift 1
+        command_install "$@"
+        ;;
+    list | li | ls)
+        shift 1
+        command_list "$@"
+        ;;
+    login | sh)
+        shift 1
+        command_login "$@"
+        ;;
+    remove | rm)
+        shift 1
+        command_remove "$@"
+        ;;
+    *)
+        msg
+        msg "${BRED}Error: unknown command '${YELLOW}${1}${BRED}'.${RST}"
+        msg
+        msg "${CYAN}View supported commands by: ${GREEN}${PROGRAM_NAME} help${CYAN}${RST}"
+        msg
+        exit 1
+        ;;
+    esac
+else
+    msg
+    msg "${BRED}Error: no command provided.${RST}"
+    command_help
+fi
