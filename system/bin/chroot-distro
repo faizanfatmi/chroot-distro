@@ -75,7 +75,7 @@ safe_mount() {
     src="$1"
     dst="$2"
     if [ -e "$src" ]; then
-        mkdir -p "$(dirname "$dst")" 2>/dev/null || true
+        mkdir -p "$dst" 2>/dev/null || true
         busybox mount --bind "$src" "$dst" 2>/dev/null || {
             msg "${YELLOW}Warning: failed to mount $src to $dst${RST}"
             return 1
