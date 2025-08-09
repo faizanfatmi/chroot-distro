@@ -1,5 +1,11 @@
 # Changelog
 
+### v1.0.1
+- fix: error bash: no job control in this shell when using --user flag
+- feat: improve the mount and unmount points
+- feat: better handle --shared-tmp
+- docs: update readme
+
 ### v1.0
 - fix: --work-dir not working, drop: --env option
 - feat: add /data to mount point, so that it can access /data/data/com.termux/
