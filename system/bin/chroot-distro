@@ -643,12 +643,22 @@ command_login() {
 
     # Mount core file systems
     safe_mount "/dev" "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev"
-    safe_mount "/proc" "${INSTALLED_ROOTFS_DIR}/${distro_name}/proc"
-    safe_mount "/sys" "${INSTALLED_ROOTFS_DIR}/${distro_name}/sys"
+    safe_mount "/dev/binderfs" "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/binderfs"
+    safe_mount "/dev/shm" "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/shm"
+
+    # Mount proc and sys filesystems
+    mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/proc" 2>/dev/null || true
+    busybox mount -t proc proc "${INSTALLED_ROOTFS_DIR}/${distro_name}/proc" 2>/dev/null || {
+        msg "${YELLOW}Warning: failed to mount proc filesystem${RST}"
+    }
+
+    mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/sys" 2>/dev/null || true
+    busybox mount -t sysfs sysfs "${INSTALLED_ROOTFS_DIR}/${distro_name}/sys" 2>/dev/null || {
+        msg "${YELLOW}Warning: failed to mount sys filesystem${RST}"
+    }
 
     # Mount /dev/pts for pseudo-terminals (required for apt and many other programs)
-    # This cannot use safe_mount as it needs to mount devpts filesystem, not bind mount
-    mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/pts"
+    mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/pts" 2>/dev/null || true
     if ! busybox mount -t devpts devpts "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/pts" 2>/dev/null; then
         # Fallback: try with specific options if the simple mount fails
         busybox mount -t devpts -o "rw,nosuid,noexec,gid=5,mode=620,ptmxmode=000" devpts "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/pts" 2>/dev/null || {
@@ -664,22 +674,18 @@ command_login() {
     safe_mount "/proc/self/fd/2" "${INSTALLED_ROOTFS_DIR}/${distro_name}/dev/stderr"
 
     # Mount Android storage directories
-    if [ -d "/sdcard" ]; then
-        mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/sdcard"
-        safe_mount "/sdcard" "${INSTALLED_ROOTFS_DIR}/${distro_name}/sdcard"
-    fi
+    safe_mount "/sdcard" "${INSTALLED_ROOTFS_DIR}/${distro_name}/sdcard"
 
     # Mount /storage/* directories
     for storage_dir in /storage/*; do
         if [ -d "$storage_dir" ]; then
-            mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}${storage_dir}"
             safe_mount "$storage_dir" "${INSTALLED_ROOTFS_DIR}/${distro_name}${storage_dir}"
         fi
     done
 
     # Enable SUID on /data if it's mounted as a separate filesystem
-    if mount | grep -q " /data "; then
-        if mount | grep " /data " | grep -q "nosuid"; then
+    if busybox mount | grep -q " /data "; then
+        if busybox mount | grep " /data " | grep -q "nosuid"; then
             busybox mount -o remount,dev,suid /data 2>/dev/null || {
                 msg "${YELLOW}Warning: failed to enable SUID on /data${RST}"
             }
@@ -693,14 +699,12 @@ command_login() {
     # Use Termux home directory if requested.
     if [ "$use_termux_home" = "true" ]; then
         if [ "$login_user" = "root" ]; then
-            mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/root"
             safe_mount "$TERMUX_HOME" "${INSTALLED_ROOTFS_DIR}/${distro_name}/root"
         else
             user_home="$login_home"
             if [ -z "$user_home" ]; then
                 user_home="/home/${login_user}"
             fi
-            mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}${user_home}"
             safe_mount "$TERMUX_HOME" "${INSTALLED_ROOTFS_DIR}/${distro_name}${user_home}"
         fi
     fi
@@ -712,16 +716,16 @@ command_login() {
 
     # Bind custom file systems
     if [ -n "$custom_fs_bindings" ]; then
-        for binding in $custom_fs_bindings; do
+        # Use printf to handle the space-separated bindings properly
+        printf '%s\n' "$custom_fs_bindings" | tr ' ' '\n' | while IFS= read -r binding; do
+            [ -z "$binding" ] && continue
             case "$binding" in
             *:*)
                 src="${binding%:*}"
                 dst="${binding#*:}"
-                mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}${dst}"
                 safe_mount "$src" "${INSTALLED_ROOTFS_DIR}/${distro_name}${dst}"
                 ;;
             *)
-                mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}${binding}"
                 safe_mount "$binding" "${INSTALLED_ROOTFS_DIR}/${distro_name}${binding}"
                 ;;
             esac
@@ -754,7 +758,8 @@ EOF
 
         # Clean up the temporary script
         rm -f "$temp_script_path" 2>/dev/null
-        # ############### Previously i was doing it like this ##############################################
+        # ###################################################################################################
+        # Previously i was doing it like this
         # which was causing some issue whenever i use the --user flag
         # it shows a error:- bash: cannot set terminal process group (-1): Inappropriate ioctl for device
         #                    bash: no job control in this shell
@@ -1065,6 +1070,12 @@ command_remove_help() {
     msg
 }
 
+#############################################################################
+#
+# FUNCTION TO UNMOUNT SPECIFIED DISTRIBUTION
+#
+#############################################################################
+
 command_unmount() {
     force_unmount=false
     distro_name=""
@@ -1206,6 +1217,8 @@ command_unmount_system_points() {
     busybox umount "${rootfs}/dev/stdin" 2>/dev/null || true
     busybox umount "${rootfs}/dev/fd" 2>/dev/null || true
     busybox umount "${rootfs}/dev/random" 2>/dev/null || true
+    busybox umount "${rootfs}/dev/binderfs" 2>/dev/null || true
+    busybox umount "${rootfs}/dev/shm" 2>/dev/null || true
 
     # Unmount /dev/pts before /dev
     busybox umount "${rootfs}/dev/pts" 2>/dev/null || true
