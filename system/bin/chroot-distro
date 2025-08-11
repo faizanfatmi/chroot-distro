@@ -8,7 +8,7 @@ CYAN='\033[1;36m'
 BLUE='\033[1;34m'
 RST='\033[0m'
 
-PROGRAM_VERSION="1.0"
+PROGRAM_VERSION="1.0.1"
 
 PROGRAM_NAME=$(basename "$(realpath "$0")")
 
@@ -69,6 +69,12 @@ detect_cpu_arch() {
     *) echo "unknown" ;;
     esac
 }
+
+#############################################################################
+#
+# FUNCTION TO MOUNT FILESYSTEM WITH RIGHT PERMISSION
+#
+#############################################################################
 
 # Function to set right permission
 # if somehow it get changed
@@ -170,7 +176,13 @@ safe_mount() {
     fi
 }
 
-# Function to get distro information
+#############################################################################
+#
+# FUNCTION TO GET DISTRO INFORMATION
+#
+#############################################################################
+
+# FIXIT: need to find a better way to set this data, hardcoding it in the main installer isn't a good option
 get_distro_info() {
     distro_name="$1"
     info_type="$2" # version, supported_arch, aarch64_url, arm_url
@@ -213,6 +225,21 @@ get_distro_info() {
         ;;
     esac
 }
+
+#############################################################################
+#
+# FUNCTION TO CHECK IS BYSYBOX IS SUPPORTED
+#
+#############################################################################
+
+chroot_distro_warn_if_unsupported_busybox() {
+    current_version=$(busybox | sed -n 's/.* v\([0-9.]*\).*/\1/p' | tr -d '.')
+    if [ "$current_version" -lt 1361 ]; then
+        msg "The installed BusyBox version ($current_version) is outdated and may cause compatibility issues."
+        msg "Upgrade to BusyBox v1.36.1 or newer for optimal performance."
+    fi
+}
+
 #############################################################################
 #
 # FUNCTION TO INSTALL THE SPECIFIED DISTRIBUTION
@@ -527,14 +554,6 @@ command_install() {
     msg
 }
 
-chroot_distro_warn_if_unsupported_busybox() {
-    current_version=$(busybox | sed -n 's/.* v\([0-9.]*\).*/\1/p' | tr -d '.')
-    if [ "$current_version" -lt 1361 ]; then
-        msg "The installed BusyBox version ($current_version) is outdated and may cause compatibility issues."
-        msg "Upgrade to BusyBox v1.36.1 or newer for optimal performance."
-    fi
-}
-
 command_install_help() {
     msg
     msg "${YELLOW}Usage: ${CYAN}${PROGRAM_NAME} ${GREEN}install ${CYAN}[${GREEN}DISTRIBUTION${CYAN}]${RST}"
@@ -844,6 +863,7 @@ command_login() {
             USER="$login_user" \
             /bin/su "$login_user" -c "$exec_command"
     else
+        # FIXIT: need to find some way to do this without creating a temporary script
         # Create a temporary script to handle directory change and shell execution
         temp_script_path="${INSTALLED_ROOTFS_DIR}/${distro_name}/tmp/login_script_$$"
         cat >"$temp_script_path" <<EOF
