@@ -132,6 +132,15 @@ get_distro_info() {
 #
 #############################################################################
 
+# Function to clean up failed installation
+cleanup_failed_installation() {
+    distro_name="$1"
+    if [ -n "$distro_name" ] && [ -d "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}" ]; then
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Cleaning up failed installation...${RST}"
+        rm -rf "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}"
+    fi
+}
+
 command_install() {
     while [ $# -ge 1 ]; do
         case "$1" in
@@ -242,22 +251,29 @@ command_install() {
     # Set tarball strip option (assuming 1 for most distributions)
     TARBALL_STRIP_OPT="1"
 
-    if [ -d "${INSTALLED_ROOTFS_DIR}/${distro_name}" ]; then
-        msg
-        msg "${BRED}Error: distribution '${YELLOW}${distro_name}${BRED}' is already installed.${RST}"
-        msg
-        msg "${CYAN}Log in:     ${GREEN}${PROGRAM_NAME} login ${distro_name}${RST}"
-        msg "${CYAN}Reinstall:  ${GREEN}${PROGRAM_NAME} reset ${distro_name}${RST}"
-        msg "${CYAN}Uninstall:  ${GREEN}${PROGRAM_NAME} remove ${distro_name}${RST}"
-        msg
-        return 1
+    # Check if distribution is properly installed (has /etc directory)
+    # If directory exists but /etc doesn't exist, it's a failed installation
+    if [ -d "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}" ]; then
+        if [ -e "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc" ]; then
+            # Valid installation exists
+            msg
+            msg "${BRED}Error: distribution '${YELLOW}${distro_name}${BRED}' is already installed.${RST}"
+            msg
+            msg "${CYAN}Log in:     ${GREEN}${PROGRAM_NAME} login ${distro_name}${RST}"
+            msg "${CYAN}Reinstall:  ${GREEN}${PROGRAM_NAME} reset ${distro_name}${RST}"
+            msg "${CYAN}Uninstall:  ${GREEN}${PROGRAM_NAME} remove ${distro_name}${RST}"
+            msg
+            return 1
+        else
+            # Directory exists but installation is incomplete/failed - clean it up
+            msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Removing incomplete installation directory...${RST}"
+            rm -rf "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}"
+        fi
     fi
 
     # Create installation directory
-    if [ ! -d "${INSTALLED_ROOTFS_DIR}/${distro_name}" ]; then
-        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Creating installation directory...${RST}"
-        mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}"
-    fi
+    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Creating installation directory...${RST}"
+    mkdir -p "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}"
 
     if [ ! -d "$DOWNLOAD_CACHE_DIR" ]; then
         msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Creating directory '$DOWNLOAD_CACHE_DIR'...${RST}"
@@ -280,6 +296,8 @@ command_install() {
             msg
             msg "${BLUE}[${BRED}!${BLUE}] ${CYAN}Download failure, please check your network connection.${RST}"
             rm -f "${DOWNLOAD_CACHE_DIR}/${tarball_name}.tmp"
+            # Clean up the installation directory on failure
+            cleanup_failed_installation "$distro_name"
             return 1
         fi
         msg
@@ -291,40 +309,44 @@ command_install() {
     fi
 
     msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Extracting rootfs, please wait...${RST}"
+
     # --exclude='dev' - need to exclude /dev directory which may contain device files.
-    tar -C "${INSTALLED_ROOTFS_DIR}/${distro_name}" \
+
+    # Replace the problematic section with:
+    busybox tar -C "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}" \
         --strip-components="${TARBALL_STRIP_OPT}" \
         --exclude="dev" \
-        -xf "${DOWNLOAD_CACHE_DIR}/${tarball_name}" \
-        2>&1 | grep -v "/linkerconfig/" >&2
+        -xf "${DOWNLOAD_CACHE_DIR}/${tarball_name}" 2>&1 | grep -v "/linkerconfig/" >&2
 
     # If no /etc in rootfs, terminate installation.
     # This usually indicates that downloaded distribution tarball doesn't contain
     # actual rootfs, wrong tar strip option was specified or the distribution has
     # high grade of customization and doesn't respect FHS standard.
-    if [ ! -e "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc" ]; then
+    if [ ! -e "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc" ]; then
         msg
         msg "${BRED}Error: the rootfs of distribution '${YELLOW}${distro_name}${BRED}' has unexpected structure (no /etc directory). ${RST}"
         msg
+        cleanup_failed_installation "$distro_name"
         return 1
     fi
+
     # Write important environment variables to /etc/environment.
-    chmod u+rw "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/environment" >/dev/null 2>&1 || true
-    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Writing file '${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/environment'...${RST}"
+    chmod u+rw "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/environment" >/dev/null 2>&1 || true
+    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Writing file '${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/environment'...${RST}"
     for var in ANDROID_ART_ROOT ANDROID_DATA ANDROID_I18N_ROOT ANDROID_ROOT \
         ANDROID_RUNTIME_ROOT ANDROID_TZDATA_ROOT BOOTCLASSPATH COLORTERM \
         DEX2OATBOOTCLASSPATH EXTERNAL_STORAGE; do
         # Use eval to get the value of the variable
         value=$(eval "echo \${${var}:-}")
         if [ -n "$value" ]; then
-            echo "${var}=${value}" >>"${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/environment"
+            echo "${var}=${value}" >>"${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/environment"
         fi
     done
     unset var value
     # Don't touch these variables.
     # TERM is being inherited from currect environment. Otherwise it is being
     # set to xterm-256color (Termux app default).
-    cat <<-EOF >>"${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/environment"
+    cat <<-EOF >>"${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/environment"
 		LANG=en_US.UTF-8
 		MOZ_FAKE_NO_SANDBOX=1
 		PATH=${DEFAULT_PATH_ENV}
@@ -335,25 +357,25 @@ command_install() {
 
     # Fix PATH in some configuration files.
     for f in /etc/bash.bashrc /etc/profile /etc/login.defs; do
-        [ ! -e "${INSTALLED_ROOTFS_DIR}/${distro_name}${f}" ] && continue
-        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Updating PATH in '${INSTALLED_ROOTFS_DIR}/${distro_name}${f}' if needed...${RST}"
+        [ ! -e "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}${f}" ] && continue
+        msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Updating PATH in '${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}${f}' if needed...${RST}"
         sed -i -E "s@\<(PATH=)(\"?[^\"[:space:]]+(\"|\$|\>))@\1\"${DEFAULT_PATH_ENV}\"@g" \
-            "${INSTALLED_ROOTFS_DIR}/${distro_name}${f}"
+            "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}${f}"
     done
     unset f
 
     # Default /etc/resolv.conf may be empty or unsuitable for use.
-    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Creating file '${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/resolv.conf'...${RST}"
-    rm -f "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/resolv.conf"
-    cat <<-EOF >"${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/resolv.conf"
+    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Creating file '${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/resolv.conf'...${RST}"
+    rm -f "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/resolv.conf"
+    cat <<-EOF >"${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/resolv.conf"
 		nameserver ${DEFAULT_PRIMARY_NAMESERVER}
 		nameserver ${DEFAULT_SECONDARY_NAMESERVER}
 		EOF
 
     # Default /etc/hosts may be empty or incomplete.
-    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Creating file '${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/hosts'...${RST}"
-    chmod u+rw "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/hosts" >/dev/null 2>&1 || true
-    cat <<-EOF >"${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/hosts"
+    msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Creating file '${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/hosts'...${RST}"
+    chmod u+rw "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/hosts" >/dev/null 2>&1 || true
+    cat <<-EOF >"${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/hosts"
 		# IPv4.
 		127.0.0.1   localhost.localdomain localhost
 
@@ -368,18 +390,18 @@ command_install() {
 
     # Add Android-specific UIDs/GIDs to /etc/group and /etc/gshadow.
     msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Registering Android-specific UIDs and GIDs...${RST}"
-    chmod u+rw "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/passwd" \
-        "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/shadow" \
-        "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/group" \
-        "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/gshadow" >/dev/null 2>&1 || true
+    chmod u+rw "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/passwd" \
+        "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/shadow" \
+        "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/group" \
+        "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/gshadow" >/dev/null 2>&1 || true
 
     # Add current Android user to passwd
     echo "aid_$(id -un):x:$(id -u):$(id -g):Android User:/:/sbin/nologin" >> \
-        "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/passwd"
+        "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/passwd"
 
     # Add shadow entry for Android user
     echo "aid_$(id -un):*:18446:0:99999:7:::" >> \
-        "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/shadow"
+        "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/shadow"
 
     # Add Android group mappings using POSIX sh approach
     group_names=$(id -Gn | tr ' ' '\n')
@@ -398,10 +420,10 @@ command_install() {
     while read -r group_name <&3 && read -r group_id <&4; do
         if [ -n "$group_name" ] && [ -n "$group_id" ]; then
             echo "aid_${group_name}:x:${group_id}:root,aid_$(id -un)" \
-                >>"${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/group"
-            if [ -f "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/gshadow" ]; then
+                >>"${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/group"
+            if [ -f "${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/gshadow" ]; then
                 echo "aid_${group_name}:*::root,aid_$(id -un)" \
-                    >>"${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/gshadow"
+                    >>"${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/gshadow"
             fi
         fi
     done
@@ -1358,6 +1380,10 @@ if [ $# -ge 1 ]; then
     unmount | umount | um)
         shift 1
         command_unmount "$@"
+        ;;
+    clear-cache | clear | cl)
+        shift 1
+        command_clear_cache "$@"
         ;;
     remove | rm)
         shift 1
