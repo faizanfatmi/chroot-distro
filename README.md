@@ -23,7 +23,7 @@ All root implementations are compatible. You can use **chroot-distro** from any 
 
 ### BusyBox for Android NDK
 
-- Install the [latest BusyBox for Android NDK](https://github.com/osm0sis/android-busybox-ndk) by [osm0sis](https://github.com/osm0sis) as a Magisk module.
+- Install the [latest BusyBox for Android NDK](https://github.com/osm0sis/android-busybox-ndk) by [osm0sis](https://github.com/osm0sis) as a [Magisk module](https://github.com/Magisk-Modules-Repo/busybox-ndk).
 - You can also use Magisk or KernelSU’s builtin BusyBox.
 
 - **Recommended:** v1.36.1  
@@ -41,7 +41,7 @@ To simplify usage from Termux, create a wrapper script:
 
 1. Open Termux and run:
 ```bash
-nano $PREFIX/bin/chroot
+nano $PREFIX/bin/chroot-distro
 ```
 
 2. Paste the following content:
@@ -59,7 +59,7 @@ su -c "/system/bin/chroot-distro $args"
 
 3. Make the script executable:
 ```bash
-chmod +x $PREFIX/bin/chroot
+chmod +x $PREFIX/bin/chroot-distro
 ```
 
 **Result:** You can now use chroot-distro directly from Termux without switching to root user manually.
