@@ -198,10 +198,10 @@ get_distro_info() {
         ;;
     "debian")
         case "$info_type" in
-        "version") echo "bookworm" ;;
+        "version") echo "trixie" ;;
         "supported_arch") echo "aarch64 arm" ;;
-        "aarch64_url") echo "https://github.com/termux/proot-distro/releases/download/v4.17.3/debian-bookworm-aarch64-pd-v4.17.3.tar.xz" ;;
-        "arm_url") echo "https://github.com/termux/proot-distro/releases/download/v4.17.3/debian-bookworm-arm-pd-v4.17.3.tar.xz" ;;
+        "aarch64_url") echo "https://github.com/termux/proot-distro/releases/download/v4.26.0/debian-trixie-aarch64-pd-v4.26.0.tar.xz" ;;
+        "arm_url") echo "https://github.com/termux/proot-distro/releases/download/v4.26.0/debian-trixie-arm-pd-v4.26.0.tar.xz" ;;
         esac
         ;;
     "fedora")
