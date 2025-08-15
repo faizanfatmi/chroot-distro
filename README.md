@@ -1,17 +1,17 @@
 # chroot-distro
 
-**chroot-distro** installs GNU/Linux distributions in a chroot environment on Android devices.  
+**chroot-distro** installs GNU/Linux distributions in a chroot environment on Android devices.
 Based on [proot-distro](https://github.com/termux/proot-distro)
 
 ---
 
-## Important Warning
-
-- **Root access is required**
-- This tool may delete files or modify the system. Use with caution
-- **Back up important files and system partitions before use**
-- Recommended: BusyBox v1.36.1 for Android NDK  
-- Avoid: BusyBox v1.32.1 (contains known bugs)
+> [!WARNING]
+>
+>- **Root access is required**
+>- This tool may delete files or modify the system. Use with caution
+>- **Back up important files before use**
+>- Recommended: BusyBox v1.36.1 for Android NDK
+>- Avoid: BusyBox v1.32.1 (contains known bugs)
 
 ---
 
@@ -25,10 +25,10 @@ All root implementations are compatible. You can use **chroot-distro** from any 
 
 - Install the [latest BusyBox for Android NDK](https://github.com/osm0sis/android-busybox-ndk) by [osm0sis](https://github.com/osm0sis) as a [Magisk module](https://github.com/Magisk-Modules-Repo/busybox-ndk).
 - You can also use Magisk or KernelSU’s builtin BusyBox.
+    > If you are kernelsu user then you don't need to flash busybox-ndk module the builtbusybox-ndk module the builtin busybox work just great 
 
-- **Recommended:** v1.36.1  
-- **Avoid:** v1.32.1  
-- **Note:** Outdated versions may cause issues
+- **Recommended:** v1.36.1
+- **Avoid:** v1.32.1 (Outdated versions will cause issues)
 
 ## Installation
 
@@ -62,7 +62,7 @@ su -c "/system/bin/chroot-distro $args"
 chmod +x $PREFIX/bin/chroot-distro
 ```
 
-**Result:** You can now use chroot-distro directly from Termux without switching to root user manually.
+> You can now use chroot-distro directly from Termux without switching to root user manually.
 
 ---
 
