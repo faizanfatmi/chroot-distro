@@ -1,5 +1,25 @@
 # Changelog
 
+### v1.4
+- docs: update readme
+- add: kali linux
+- fix: bash: cannot set terminal process group
+    - use the `su -P` to fix the below error
+    bash: cannot set terminal process group (4979): Inappropriate ioctl for device
+    bash: no job control in this shell
+    get it from here :- https://serverfault.com/a/1144764
+- remove: unnecessary mounts
+- remove: unnecessary group register
+- add: /dev/pts mount instead of creating a new isolated devpts
+- add: more checks
+- merge: --force and normal unmount into one
+- properly add /etc/group
+- restore termux TMPDIR ownership after using it
+- improve: change help menus designs
+- improve: gid register process
+- improve: /dev/shm mount logic
+- fix: /dev/shm permission issue
+
 ### v1.3
 - improve: mount /proc/self/fd folders only if they exist
 - fix: remove the if block around suid mount
