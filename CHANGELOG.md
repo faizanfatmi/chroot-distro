@@ -1,5 +1,9 @@
 # Changelog
 
+### v1.4.1
+- remove unnecessary checks
+- fix exec_command doesn't work sometime
+
 ### v1.4
 - docs: update readme
 - add: kali linux
