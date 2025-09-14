@@ -1,5 +1,9 @@
 # Changelog
 
+### v1.4.2
+- fix: correct kali's download urls
+- improve: improve the way it use to pass arguments in chroot
+
 ### v1.4.1
 - remove unnecessary checks
 - fix exec_command doesn't work sometime
