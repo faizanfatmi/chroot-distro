@@ -8,7 +8,7 @@ on:
 
 env:
   # Currently supported distros
-  DISTROS: "archlinux debian ubuntu fedora kali"
+  DISTROS: "archlinux debian ubuntu ubuntu-lts fedora kali"
   # Architectures to skip (space-separated)
   SKIP_ARCHS: "x86_64 i686 i386"
 
@@ -95,6 +95,10 @@ jobs:
         for distro in $DISTROS; do
           echo "=== Processing $distro ==="
 
+        #################################
+        #     special case for kali     #
+        #################################
+
           if [[ "$distro" == "kali" ]]; then
             echo "Processing Kali Linux (special case)"
 
@@ -146,6 +150,87 @@ jobs:
 
             continue
           fi
+
+        #################################
+        #  special case for ubuntu-lts  #
+        #################################
+
+          if [[ "$distro" == "ubuntu-lts" ]]; then
+            echo "Processing Ubuntu LTS (special case)"
+
+            ubuntu_rootfs_base_url="https://cdimage.ubuntu.com/ubuntu-base/releases"
+            release="noble"
+
+            # Process arm64 (aarch64)
+            architecture="arm64"
+            version=$(wget -qO- "${ubuntu_rootfs_base_url}/${release}/release/" | grep -oE "ubuntu-base-[0-9]+(\.[0-9]+)*-base-${architecture}\.tar\.gz" | head -n 1 | sed -E 's/ubuntu-base-([0-9]+(\.[0-9]+)*)-base-.*/\1/')
+
+            if [[ -n "$version" ]]; then
+              download_url="${ubuntu_rootfs_base_url}/${release}/release/ubuntu-base-${version}-base-${architecture}.tar.gz"
+              output_file="releases/ubuntu-lts-latest-aarch64.tar.xz"
+              asset_name="ubuntu-lts-latest-aarch64.tar.xz"
+
+              echo "Found Ubuntu LTS version: $version for $architecture"
+
+              if download_and_process "$download_url" "$output_file"; then
+                new_hash=$(sha256sum "$output_file" | cut -d' ' -f1)
+                existing_hash=$(get_existing_asset_hash "$asset_name")
+
+                echo "New hash: $new_hash"
+                echo "Existing hash: $existing_hash"
+
+                if [[ "$new_hash" != "$existing_hash" ]]; then
+                  cp "$output_file" "files_to_upload/"
+                  echo "$asset_name" >> files_changed.txt
+                  echo "✓ Ubuntu LTS aarch64 - Content changed, will upload"
+                else
+                  echo "✓ Ubuntu LTS aarch64 - No changes, skipping upload"
+                fi
+              else
+                echo "✗ Failed to download Ubuntu LTS aarch64"
+              fi
+            else
+              echo "✗ Failed to get Ubuntu LTS version for $architecture"
+            fi
+
+            # Process armhf (arm)
+            architecture="armhf"
+            version=$(wget -qO- "${ubuntu_rootfs_base_url}/${release}/release/" | grep -oE "ubuntu-base-[0-9]+(\.[0-9]+)*-base-${architecture}\.tar\.gz" | head -n 1 | sed -E 's/ubuntu-base-([0-9]+(\.[0-9]+)*)-base-.*/\1/')
+
+            if [[ -n "$version" ]]; then
+              download_url="${ubuntu_rootfs_base_url}/${release}/release/ubuntu-base-${version}-base-${architecture}.tar.gz"
+              output_file="releases/ubuntu-lts-latest-arm.tar.xz"
+              asset_name="ubuntu-lts-latest-arm.tar.xz"
+
+              echo "Found Ubuntu LTS version: $version for $architecture"
+
+              if download_and_process "$download_url" "$output_file"; then
+                new_hash=$(sha256sum "$output_file" | cut -d' ' -f1)
+                existing_hash=$(get_existing_asset_hash "$asset_name")
+
+                echo "New hash: $new_hash"
+                echo "Existing hash: $existing_hash"
+
+                if [[ "$new_hash" != "$existing_hash" ]]; then
+                  cp "$output_file" "files_to_upload/"
+                  echo "$asset_name" >> files_changed.txt
+                  echo "✓ Ubuntu LTS arm - Content changed, will upload"
+                else
+                  echo "✓ Ubuntu LTS arm - No changes, skipping upload"
+                fi
+              else
+                echo "✗ Failed to download Ubuntu LTS arm"
+              fi
+            else
+              echo "✗ Failed to get Ubuntu LTS version for $architecture"
+            fi
+
+            continue
+          fi
+
+        #################################
+        #  rest uses the proot-distro   #
+        #################################
 
           proot_distro_script_url="https://raw.githubusercontent.com/termux/proot-distro/master/distro-plugins/${distro}.sh"
 

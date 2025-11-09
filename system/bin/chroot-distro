@@ -65,7 +65,7 @@ DEFAULT_PATH_ENV="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/
 BUSYBOXPATH="$(command -v busybox 2>/dev/null)"
 
 # variables to store distro information
-SUPPORTED_DISTRIBUTIONS="archlinux debian fedora ubuntu kali"
+SUPPORTED_DISTRIBUTIONS="archlinux debian fedora ubuntu ubuntu-lts kali"
 
 # ensure that the expected version of busybox is used
 busybox() { "$BUSYBOXPATH" "$@"; }
@@ -215,6 +215,13 @@ get_distro_info() {
         "supported_arch") busybox echo "aarch64 arm" ;;
         "aarch64_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/ubuntu-latest-aarch64.tar.xz" ;;
         "arm_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/ubuntu-latest-arm.tar.xz" ;;
+        esac
+        ;;
+    "ubuntu-lts")
+        case "$info_type" in
+        "supported_arch") busybox echo "aarch64 arm" ;;
+        "aarch64_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/ubuntu-lts-latest-aarch64.tar.xz" ;;
+        "arm_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/ubuntu-lts-latest-arm.tar.xz" ;;
         esac
         ;;
     "kali")
