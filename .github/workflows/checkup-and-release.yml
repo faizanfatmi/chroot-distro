@@ -1,0 +1,287 @@
+name: Checkup And Release
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck on scripts
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+
+          echo "Checking system/bin/chroot-distro..."
+          shellcheck system/bin/chroot-distro
+
+          echo "Checking customize.sh..."
+          shellcheck customize.sh
+
+          echo "Checking uninstall.sh..."
+          shellcheck uninstall.sh
+
+          echo "✅ All shell scripts passed ShellCheck!"
+
+  version-check:
+    name: Version Consistency Check
+    runs-on: ubuntu-latest
+    if: "!startsWith(github.event.head_commit.message, 'release:') && !contains(github.event.head_commit.message, '[skip ci]')"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check version consistency
+        run: |
+          # Extract versions
+          SCRIPT_VERSION=$(grep -oP 'PROGRAM_VERSION="\K[^"]+' system/bin/chroot-distro)
+          MODULE_VERSION=$(grep -oP '^version=\K.*' module.prop)
+          JSON_VERSION=$(grep -oP '"version":\s*"\K[^"]+' update.json)
+
+          echo "📋 Version Check:"
+          echo "  Script (chroot-distro): $SCRIPT_VERSION"
+          echo "  Module (module.prop):   $MODULE_VERSION"
+          echo "  JSON (update.json):     $JSON_VERSION"
+          echo ""
+
+          # Check if all versions match
+          if [ "$SCRIPT_VERSION" = "$MODULE_VERSION" ] && [ "$SCRIPT_VERSION" = "$JSON_VERSION" ]; then
+            echo "✅ All versions are in sync!"
+            exit 0
+          else
+            echo "⚠️  Warning: Version mismatch detected!"
+            echo "This is expected if you're preparing a release."
+            echo "Please ensure PROGRAM_VERSION is updated in system/bin/chroot-distro,"
+            echo "then create a commit with message 'release: vX.Y.Z' to sync all files."
+            exit 0  # Don't fail, just warn
+          fi
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    if: startsWith(github.event.head_commit.message, 'release:') && !contains(github.event.head_commit.message, '[skip ci]')
+    needs: [shellcheck]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from commit message
+        id: extract_version
+        run: |
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          VERSION=$(echo "$COMMIT_MSG" | grep -oP 'release:\s*v?\K[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+
+          if [ -z "$VERSION" ]; then
+            echo "❌ Error: Could not extract version from commit message: $COMMIT_MSG"
+            echo "Expected format: 'release: v1.4.4' or 'release: 1.4.4'"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Extracted version: $VERSION"
+
+      - name: Verify version matches script
+        run: |
+          SCRIPT_VERSION=$(grep -oP 'PROGRAM_VERSION="\K[^"]+' system/bin/chroot-distro)
+          RELEASE_VERSION="${{ steps.extract_version.outputs.version }}"
+
+          echo "Script version:  $SCRIPT_VERSION"
+          echo "Release version: $RELEASE_VERSION"
+
+          if [ "$SCRIPT_VERSION" != "$RELEASE_VERSION" ]; then
+            echo "❌ Error: Version mismatch!"
+            echo "   PROGRAM_VERSION in system/bin/chroot-distro: $SCRIPT_VERSION"
+            echo "   Version in commit message: $RELEASE_VERSION"
+            echo ""
+            echo "Please update PROGRAM_VERSION in system/bin/chroot-distro to match $RELEASE_VERSION"
+            exit 1
+          fi
+
+          echo "✅ Versions match!"
+
+      - name: Get last tag and calculate version code
+        id: last_version
+        run: |
+          # Get last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "last_tag=$LAST_TAG" >> $GITHUB_OUTPUT
+
+          # Calculate new version code
+          CURRENT_CODE=$(grep -oP '^versionCode=\K[0-9]+' module.prop)
+          NEW_CODE=$((CURRENT_CODE + 1))
+
+          echo "version_code=$NEW_CODE" >> $GITHUB_OUTPUT
+          echo "Last tag: ${LAST_TAG:-none}"
+          echo "Current version code: $CURRENT_CODE"
+          echo "New version code: $NEW_CODE"
+
+      - name: Generate changelog
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+          LAST_TAG="${{ steps.last_version.outputs.last_tag }}"
+
+          echo "📝 Generating changelog..."
+
+          # Get commits since last tag (excluding release and chore commits)
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"%s" HEAD)
+          else
+            COMMITS=$(git log --pretty=format:"%s" ${LAST_TAG}..HEAD)
+          fi
+
+          # Filter and format commits
+          FORMATTED_COMMITS=$(echo "$COMMITS" | \
+            grep -v "^release:" | \
+            grep -v "^chore: update files for release" | \
+            grep -v "^\s*$" | \
+            sed 's/^/- /')
+
+          # Create new changelog entry
+          {
+            echo "### v${VERSION}"
+            echo ""
+            echo "$FORMATTED_COMMITS"
+            echo ""
+          } > /tmp/new_changelog.txt
+
+          # Update CHANGELOG.md
+          if [ -f CHANGELOG.md ] && grep -q "^# Changelog" CHANGELOG.md; then
+            # Extract existing content after header
+            EXISTING=$(tail -n +3 CHANGELOG.md)
+
+            # Create new CHANGELOG.md
+            {
+              echo "# Changelog"
+              echo ""
+              cat /tmp/new_changelog.txt
+              echo "$EXISTING"
+            } > CHANGELOG.md
+          else
+            # Create new changelog file
+            {
+              echo "# Changelog"
+              echo ""
+              cat /tmp/new_changelog.txt
+            } > CHANGELOG.md
+          fi
+
+          echo "Generated changelog entry:"
+          cat /tmp/new_changelog.txt
+
+      - name: Update update.json
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+          VERSION_CODE="${{ steps.last_version.outputs.version_code }}"
+
+          cat > update.json << EOF
+          {
+            "version": "${VERSION}",
+            "versionCode": ${VERSION_CODE},
+            "zipUrl": "https://github.com/${{ github.repository }}/releases/download/${VERSION}/chroot-distro.zip",
+            "changelog": "https://raw.githubusercontent.com/${{ github.repository }}/main/CHANGELOG.md"
+          }
+          EOF
+
+          echo "✅ Updated update.json:"
+          cat update.json
+
+      - name: Update module.prop
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+          VERSION_CODE="${{ steps.last_version.outputs.version_code }}"
+
+          sed -i "s/^version=.*/version=${VERSION}/" module.prop
+          sed -i "s/^versionCode=.*/versionCode=${VERSION_CODE}/" module.prop
+
+          echo "✅ Updated module.prop:"
+          cat module.prop
+
+      - name: Commit updated files
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          git add CHANGELOG.md update.json module.prop
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update files for release v${VERSION} [skip ci]"
+            echo "✅ Committed updated files"
+          fi
+
+      - name: Create and push tag
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+
+          # Delete tag if it exists
+          git tag -d "${VERSION}" 2>/dev/null || true
+          git push origin :refs/tags/"${VERSION}" 2>/dev/null || true
+
+          # Create new tag
+          git tag -a "${VERSION}" -m "Release v${VERSION}"
+
+          echo "✅ Created tag ${VERSION}"
+
+      - name: Push changes and tag
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+
+          git push origin main
+          git push origin "${VERSION}"
+
+          echo "✅ Pushed changes and tag"
+
+      - name: Create release zip
+        run: |
+          zip -r chroot-distro.zip . \
+            -x "README.md" \
+            -x "CHANGELOG.md" \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x "*.zip"
+
+          ls -lh chroot-distro.zip
+          echo "✅ Created release zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.extract_version.outputs.version }}
+          name: Release v${{ steps.extract_version.outputs.version }}
+          body_path: /tmp/new_changelog.txt
+          files: chroot-distro.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release Summary
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+          VERSION_CODE="${{ steps.last_version.outputs.version_code }}"
+
+          echo "🎉 Release v${VERSION} created successfully!"
+          echo ""
+          echo "📦 Release Details:"
+          echo "  - Version: ${VERSION}"
+          echo "  - Version Code: ${VERSION_CODE}"
+          echo "  - Tag: ${VERSION}"
+          echo "  - ZIP: chroot-distro.zip"
+          echo ""
+          echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/${VERSION}"
