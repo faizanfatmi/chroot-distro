@@ -826,7 +826,7 @@ command_install() {
 
     # Fix ALL regular users (UID >= 1000, UID < 65534)
     msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Configuring network access for all users...${RST}"
-    for user in $(busybox awk -F: '$3 >= 1000 && $3 < 65534 {print $1}' "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/passwd"); do
+    busybox awk -F: '$3 >= 1000 && $3 < 65534 {print $1}' "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/passwd" | while IFS= read -r user; do
         chroot "${INSTALLED_ROOTFS_DIR}/${distro_name}" /sbin/usermod -a -G aid_inet,aid_net_raw "$user" 2>/dev/null || true
     done
 
