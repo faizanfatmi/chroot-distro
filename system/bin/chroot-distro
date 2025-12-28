@@ -928,7 +928,7 @@ command_install() {
 
 	# Fix _apt user if exists (Debian-based distributions)
 	if run_chroot_cmd /bin/id _apt >/dev/null 2>&1; then
-		run_chroot_cmd /usr/sbin/usermod -a -G aid_inet,aid_net_raw _apt 2>/dev/null || true
+		run_chroot_cmd /usr/sbin/usermod -g 3003 -G 3003,3004 -a _apt 2>/dev/null || true
 
 		# Create directories
 		run_chroot_cmd /usr/bin/mkdir -p /var/lib/apt/lists/partial 2>/dev/null || true
