@@ -41,13 +41,16 @@ fi
 
 PROGRAM_VERSION="1.4.6"
 
+REPO_WONER="sabamdarif"
+REPO_NAME="chroot-distro"
+
 PROGRAM_NAME=$(basename "$(realpath "$0")")
 
 TERMUX_HOME="/data/data/com.termux/files/home"
 TERMUX_PREFIX="/data/data/com.termux/files/usr"
 
 # Base directory where script keeps runtime data
-RUNTIME_DIR=/data/local/chroot-distro
+RUNTIME_DIR=/data/local/${PROGRAM_NAME}
 
 # Where rootfs tarballs are downloaded.
 DOWNLOAD_CACHE_DIR="${RUNTIME_DIR}/dlcache"
@@ -71,9 +74,6 @@ SUPPORTED_DISTRIBUTIONS="archlinux debian fedora ubuntu ubuntu-lts kali"
 
 # ensure that the expected version of busybox is used
 busybox() { "$BUSYBOXPATH" "$@"; }
-
-# ensure that busybox version of getopt is used
-getopt() { busybox getopt "$@"; }
 
 #############################################################################
 #
@@ -415,8 +415,8 @@ get_distro_info() {
 	"archlinux")
 		case "$info_type" in
 		"supported_arch") busybox echo "aarch64 arm" ;;
-		"aarch64_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/archlinux-latest-aarch64.tar.xz" ;;
-		"arm_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/archlinux-latest-arm.tar.xz" ;;
+		"aarch64_url") busybox echo "https://github.com/${REPO_WONER}/${REPO_NAME}/releases/download/distro/archlinux-latest-aarch64.tar.xz" ;;
+		"arm_url") busybox echo "https://github.com/${REPO_WONER}/${REPO_NAME}/releases/download/distro/archlinux-latest-arm.tar.xz" ;;
 		esac
 		# distro specfic configuration
 		distro_setup() {
@@ -434,8 +434,8 @@ get_distro_info() {
 	"debian")
 		case "$info_type" in
 		"supported_arch") busybox echo "aarch64 arm" ;;
-		"aarch64_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/debian-latest-aarch64.tar.xz" ;;
-		"arm_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/debian-latest-arm.tar.xz" ;;
+		"aarch64_url") busybox echo "https://github.com/${REPO_WONER}/${REPO_NAME}/releases/download/distro/debian-latest-aarch64.tar.xz" ;;
+		"arm_url") busybox echo "https://github.com/${REPO_WONER}/${REPO_NAME}/releases/download/distro/debian-latest-arm.tar.xz" ;;
 		esac
 		# distro specfic configuration
 		distro_setup() {
@@ -447,7 +447,7 @@ get_distro_info() {
 	"fedora")
 		case "$info_type" in
 		"supported_arch") busybox echo "aarch64" ;;
-		"aarch64_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/fedora-latest-aarch64.tar.xz" ;;
+		"aarch64_url") busybox echo "https://github.com/${REPO_WONER}/${REPO_NAME}/releases/download/distro/fedora-latest-aarch64.tar.xz" ;;
 		"arm_url") busybox echo "" ;; # Not supported
 		esac
 		# distro specfic configuration
@@ -460,8 +460,8 @@ get_distro_info() {
 	"ubuntu")
 		case "$info_type" in
 		"supported_arch") busybox echo "aarch64 arm" ;;
-		"aarch64_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/ubuntu-latest-aarch64.tar.xz" ;;
-		"arm_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/ubuntu-latest-arm.tar.xz" ;;
+		"aarch64_url") busybox echo "https://github.com/${REPO_WONER}/${REPO_NAME}/releases/download/distro/ubuntu-latest-aarch64.tar.xz" ;;
+		"arm_url") busybox echo "https://github.com/${REPO_WONER}/${REPO_NAME}/releases/download/distro/ubuntu-latest-arm.tar.xz" ;;
 		esac
 		# distro specfic configuration
 		distro_setup() {
@@ -480,8 +480,8 @@ get_distro_info() {
 	"ubuntu-lts")
 		case "$info_type" in
 		"supported_arch") busybox echo "aarch64 arm" ;;
-		"aarch64_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/ubuntu-lts-latest-aarch64.tar.xz" ;;
-		"arm_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/ubuntu-lts-latest-arm.tar.xz" ;;
+		"aarch64_url") busybox echo "https://github.com/${REPO_WONER}/${REPO_NAME}/releases/download/distro/ubuntu-lts-latest-aarch64.tar.xz" ;;
+		"arm_url") busybox echo "https://github.com/${REPO_WONER}/${REPO_NAME}/releases/download/distro/ubuntu-lts-latest-arm.tar.xz" ;;
 		esac
 		# distro specfic configuration
 		distro_setup() {
@@ -493,8 +493,8 @@ get_distro_info() {
 	"kali")
 		case "$info_type" in
 		"supported_arch") busybox echo "aarch64 arm" ;;
-		"aarch64_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/kali-latest-aarch64.tar.xz" ;;
-		"arm_url") busybox echo "https://github.com/sabamdarif/chroot-distro/releases/download/distro/kali-latest-arm.tar.xz" ;;
+		"aarch64_url") busybox echo "https://github.com/${REPO_WONER}/${REPO_NAME}/releases/download/distro/kali-latest-aarch64.tar.xz" ;;
+		"arm_url") busybox echo "https://github.com/${REPO_WONER}/${REPO_NAME}/releases/download/distro/kali-latest-arm.tar.xz" ;;
 		esac
 		# distro specfic configuration
 		distro_setup() {
@@ -1543,7 +1543,7 @@ command_login() {
 		case "$login_wd" in
 		/data/data/com.termux/*)
 			# Check if we need to open the 'home' directory too (common case)
-			termux_internal_home="/data/data/com.termux/files/home"
+			termux_internal_home="$TERMUX_HOME"
 			extra_paths_to_save=""
 
 			if echo "$login_wd" | grep -q "^$termux_internal_home"; then
@@ -2196,7 +2196,7 @@ command_unmount_help() {
 #
 # FUNCTION TO PRINT UTILITY USAGE INFORMATION
 #
-# Prints a description of chroot-distro utility and list of the available
+# Prints a description about the utility and list of the available
 # commands.
 #
 #############################################################################
@@ -2249,7 +2249,7 @@ command_help() {
 #############################################################################
 
 show_version() {
-	msg "${CYAN}chroot-distro v${PROGRAM_VERSION} by @sabamdarif.${RST}"
+	msg "${CYAN}${PROGRAM_NAME} v${PROGRAM_VERSION} by @${REPO_WONER}.${RST}"
 }
 
 #############################################################################
