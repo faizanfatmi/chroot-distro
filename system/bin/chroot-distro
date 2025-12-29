@@ -965,11 +965,11 @@ command_install() {
 	# Enhanced network configuration with dynamic DNS
 	msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Configuring network and DNS...${RST}"
 
+	busybox mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/run/resolvconf"
 	busybox cat <<-EOF >"${INSTALLED_ROOTFS_DIR}/${distro_name}/run/resolvconf/resolv.conf"
 		nameserver ${DEFAULT_PRIMARY_NAMESERVER}
 		nameserver ${DEFAULT_SECONDARY_NAMESERVER}
 	EOF
-
 	busybox ln -sf "${INSTALLED_ROOTFS_DIR}/${distro_name}/run/resolvconf/resolv.conf" "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/resolv.conf" 2>/dev/null || true
 
 	# Default /etc/hosts may be empty or incomplete.
@@ -1511,7 +1511,7 @@ command_login() {
 			fi
 			safe_mount "$TERMUX_HOME" "${INSTALLED_ROOTFS_DIR}/${distro_name}${user_home}" "$distro_name"
 
-			# sorry for this stupid hack , but i have don't know any other way to do this
+			# sorry for this stupid hack , but i don't know any other way to do this
 			#
 			# Fix permissions for non-root users to access Termux home
 			# Save original permissions first so we can restore them later
