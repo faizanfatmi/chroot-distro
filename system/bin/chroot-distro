@@ -46,8 +46,10 @@ REPO_NAME="chroot-distro"
 
 PROGRAM_NAME=$(basename "$(realpath "$0")")
 
-TERMUX_HOME="/data/data/com.termux/files/home"
-TERMUX_PREFIX="/data/data/com.termux/files/usr"
+TERMUX_ROOT_DIR=/data/data/com.termux
+TERMUX_FILES_DIR=${TERMUX_ROOT_DIR}/files
+TERMUX_HOME="${TERMUX_FILES_DIR}/home"
+TERMUX_PREFIX="${TERMUX_FILES_DIR}/usr"
 
 # Base directory where script keeps runtime data
 RUNTIME_DIR=/data/local/${PROGRAM_NAME}
@@ -226,8 +228,8 @@ save_data_permissions() {
 	{
 		busybox stat -c "%n:%a" "/data" 2>/dev/null
 		busybox stat -c "%n:%a" "/data/data" 2>/dev/null
-		busybox stat -c "%n:%a" "/data/data/com.termux" 2>/dev/null
-		busybox stat -c "%n:%a" "/data/data/com.termux/files" 2>/dev/null
+		busybox stat -c "%n:%a" "${TERMUX_ROOT_DIR}" 2>/dev/null
+		busybox stat -c "%n:%a" "${TERMUX_FILES_DIR}" 2>/dev/null
 
 		# Save any additional paths provided
 		for path in "$@"; do
@@ -1515,7 +1517,8 @@ command_login() {
 			#
 			# Fix permissions for non-root users to access Termux home
 			# Save original permissions first so we can restore them later
-			save_data_permissions "$distro_name"
+			# IMPORTANT: Pass TERMUX_HOME so it gets added to recursive_file
+			save_data_permissions "$distro_name" "$TERMUX_HOME"
 
 			# The problem: /data has restrictive permissions (771, system:system)
 			# Non-root users can't traverse /data to reach /data/data/com.termux
@@ -1529,11 +1532,11 @@ command_login() {
 			if ! busybox chmod o+rx "${INSTALLED_ROOTFS_DIR}/${distro_name}/data/data"; then
 				msg "${YELLOW}Warning: could not make /data/data traversable${RST}"
 			fi
-			if ! busybox chmod o+rx "${INSTALLED_ROOTFS_DIR}/${distro_name}/data/data/com.termux"; then
-				msg "${YELLOW}Warning: could not make /data/data/com.termux traversable${RST}"
+			if ! busybox chmod o+rx "${INSTALLED_ROOTFS_DIR}/${distro_name}${TERMUX_ROOT_DIR}"; then
+				msg "${YELLOW}Warning: could not make ${TERMUX_ROOT_DIR} traversable${RST}"
 			fi
-			if ! busybox chmod o+rx "${INSTALLED_ROOTFS_DIR}/${distro_name}/data/data/com.termux/files"; then
-				msg "${YELLOW}Warning: could not make /data/data/com.termux/files traversable${RST}"
+			if ! busybox chmod o+rx "${INSTALLED_ROOTFS_DIR}/${distro_name}${TERMUX_FILES_DIR}"; then
+				msg "${YELLOW}Warning: could not make ${TERMUX_FILES_DIR} traversable${RST}"
 			fi
 
 			# Make the home directory itself AND CONTENTS accessible to the chroot user
@@ -1547,7 +1550,7 @@ command_login() {
 	# Fix permissions for --work-dir if it's in a restricted location (like /data) and we didn't use --termux-home
 	if [ -n "$login_wd" ] && [ "$login_user" != "root" ] && [ "$use_termux_home" != "true" ]; then
 		case "$login_wd" in
-		/data/data/com.termux/*)
+		${TERMUX_ROOT_DIR}/*)
 			# Check if we need to open the 'home' directory too (common case)
 			termux_internal_home="$TERMUX_HOME"
 			extra_paths_to_save=""
@@ -1572,11 +1575,11 @@ command_login() {
 			if ! busybox chmod o+rx "${INSTALLED_ROOTFS_DIR}/${distro_name}/data/data"; then
 				msg "${YELLOW}Warning: could not make /data/data traversable${RST}"
 			fi
-			if ! busybox chmod o+rx "${INSTALLED_ROOTFS_DIR}/${distro_name}/data/data/com.termux"; then
-				msg "${YELLOW}Warning: could not make /data/data/com.termux traversable${RST}"
+			if ! busybox chmod o+rx "${INSTALLED_ROOTFS_DIR}/${distro_name}${TERMUX_ROOT_DIR}"; then
+				msg "${YELLOW}Warning: could not make ${TERMUX_ROOT_DIR} traversable${RST}"
 			fi
-			if ! busybox chmod o+rx "${INSTALLED_ROOTFS_DIR}/${distro_name}/data/data/com.termux/files"; then
-				msg "${YELLOW}Warning: could not make /data/data/com.termux/files traversable${RST}"
+			if ! busybox chmod o+rx "${INSTALLED_ROOTFS_DIR}/${distro_name}${TERMUX_FILES_DIR}"; then
+				msg "${YELLOW}Warning: could not make ${TERMUX_FILES_DIR} traversable${RST}"
 			fi
 
 			# Make the specific work dir accessible recursively
@@ -2093,8 +2096,8 @@ command_unmount_system_points() {
 
 	busybox umount "${rootfs:?}/tmp" 2>/dev/null || true
 	if [ "$make_termux_tmp_shared" = "true" ]; then
-		ORIGINAL_UID=$(busybox stat -c %u /data/data/com.termux)
-		ORIGINAL_GID=$(busybox stat -c %g /data/data/com.termux)
+		ORIGINAL_UID=$(busybox stat -c %u ${TERMUX_ROOT_DIR})
+		ORIGINAL_GID=$(busybox stat -c %g ${TERMUX_ROOT_DIR})
 		PM_OUTPUT=$(pm list packages -U 2>/dev/null | grep "package:com.termux uid:" 2>/dev/null)
 		# making pm verifaction optional because in some case like for kernelsu
 		# you might need to fix the pm command failed
@@ -2120,8 +2123,8 @@ command_unmount_system_points() {
 		fi
 		busybox umount "${rootfs:?}${TERMUX_HOME_BIND}" 2>/dev/null || true
 		# restore Termux Home ownership to Termux
-		ORIGINAL_UID=$(busybox stat -c %u /data/data/com.termux)
-		ORIGINAL_GID=$(busybox stat -c %g /data/data/com.termux)
+		ORIGINAL_UID=$(busybox stat -c %u ${TERMUX_ROOT_DIR})
+		ORIGINAL_GID=$(busybox stat -c %g ${TERMUX_ROOT_DIR})
 		PM_OUTPUT=$(pm list packages -U 2>/dev/null | grep "package:com.termux uid:" 2>/dev/null)
 		# making pm verifaction optional because in some case like for kernelsu
 		# you might need to fix the pm command failed
