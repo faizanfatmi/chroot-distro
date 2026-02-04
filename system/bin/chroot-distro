@@ -1769,11 +1769,52 @@ command_login_help() {
 #############################################################################
 
 command_list() {
-	msg "${GREEN} Available distributions:${RST}"
-	msg
-
 	# Get current CPU architecture
 	current_arch=$(detect_cpu_arch)
+
+	# JSON output mode
+	if [ "${JOSINIFY}" = "true" ]; then
+		json_output="{\"distributions\":["
+		first_item=true
+
+		for distro in $SUPPORTED_DISTRIBUTIONS; do
+			supported_archs=$(get_distro_info "$distro" "supported_arch")
+
+			# Check if current architecture is supported for this distro
+			arch_supported=false
+			for arch in $supported_archs; do
+				if [ "$arch" = "$current_arch" ]; then
+					arch_supported=true
+					break
+				fi
+			done
+
+			# Only include distributions that support current architecture
+			if [ "$arch_supported" = "true" ]; then
+				# Check if already installed
+				if [ -d "${INSTALLED_ROOTFS_DIR}/${distro}" ]; then
+					installed="true"
+				else
+					installed="false"
+				fi
+
+				if [ "$first_item" = "true" ]; then
+					first_item=false
+				else
+					json_output="${json_output},"
+				fi
+				json_output="${json_output}{\"name\":\"${distro}\",\"installed\":${installed}}"
+			fi
+		done
+
+		json_output="${json_output}]}"
+		printf '%s\n' "$json_output"
+		return 0
+	fi
+
+	# Normal human-readable output
+	msg "${GREEN} Available distributions:${RST}"
+	msg
 
 	# Check each supported distribution
 	for distro in $SUPPORTED_DISTRIBUTIONS; do
@@ -2273,6 +2314,13 @@ command_unmount_help() {
 #############################################################################
 
 command_help() {
+	# JSON output mode
+	if [ "${JOSINIFY}" = "true" ]; then
+		printf '%s\n' "{\"program\":\"${PROGRAM_NAME}\",\"version\":\"${PROGRAM_VERSION}\",\"maintainer\":\"@${REPO_WONER}\",\"description\":\"A tool for managing chrooted Linux distributions.\",\"usage\":\"${PROGRAM_NAME} COMMAND [OPTIONS] [ARGUMENTS]\",\"commands\":[{\"name\":\"help\",\"description\":\"Show this help information.\"},{\"name\":\"install\",\"description\":\"Install a specified distribution.\"},{\"name\":\"list\",\"description\":\"List supported distributions and their installation status.\"},{\"name\":\"login\",\"description\":\"Start login shell for the specified distribution.\"},{\"name\":\"remove\",\"description\":\"Delete a specified distribution.\"},{\"name\":\"clear-cache\",\"description\":\"Clear cache of downloaded files.\"}],\"runtime_dir\":\"${RUNTIME_DIR}\"}"
+		return 0
+	fi
+
+	# Normal human-readable output
 	msg
 	msg "${GREEN}${PROGRAM_NAME} v${PROGRAM_VERSION}${RST}"
 	msg
@@ -2320,6 +2368,13 @@ command_help() {
 #############################################################################
 
 show_version() {
+	# JSON output mode
+	if [ "${JOSINIFY}" = "true" ]; then
+		printf '%s\n' "{\"program\":\"${PROGRAM_NAME}\",\"version\":\"${PROGRAM_VERSION}\",\"maintainer\":\"@${REPO_WONER}\"}"
+		return 0
+	fi
+
+	# Normal human-readable output
 	msg "${CYAN}${PROGRAM_NAME} v${PROGRAM_VERSION} by @${REPO_WONER}.${RST}"
 }
 
