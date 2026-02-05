@@ -2,38 +2,41 @@
   "distros": [
     {
       "name": "archlinux",
-      "version": "",
+      "version": "latest",
       "supported_arch": [
-        ""
+        "aarch64",
+        "arm"
       ],
-      "aarch64_url": "",
-      "arm_url": ""
+      "aarch64_url": "https://github.com/sabamdarif/chroot-distro/releases/download/archlinux/archlinux-latest-aarch64.tar.xz",
+      "arm_url": "https://github.com/sabamdarif/chroot-distro/releases/download/archlinux/archlinux-latest-arm.tar.xz"
     },
     {
       "name": "debian",
-      "version": "",
+      "version": "13",
       "supported_arch": [
-        ""
+        "aarch64",
+        "arm"
       ],
-      "aarch64_url": "",
-      "arm_url": ""
+      "aarch64_url": "https://github.com/sabamdarif/chroot-distro/releases/download/debian/debian-13-aarch64.tar.xz",
+      "arm_url": "https://github.com/sabamdarif/chroot-distro/releases/download/debian/debian-13-arm.tar.xz"
     },
     {
       "name": "ubuntu",
-      "version": "",
+      "version": "25.10",
       "supported_arch": [
-        ""
+        "aarch64",
+        "arm"
       ],
-      "aarch64_url": "",
-      "arm_url": ""
+      "aarch64_url": "https://github.com/sabamdarif/chroot-distro/releases/download/ubuntu/ubuntu-25.10-aarch64.tar.xz",
+      "arm_url": "https://github.com/sabamdarif/chroot-distro/releases/download/ubuntu/ubuntu-25.10-arm.tar.xz"
     },
     {
       "name": "fedora",
-      "version": "",
+      "version": "43",
       "supported_arch": [
-        ""
+        "aarch64"
       ],
-      "aarch64_url": "",
+      "aarch64_url": "https://github.com/sabamdarif/chroot-distro/releases/download/fedora/fedora-43-aarch64.tar.xz",
       "arm_url": ""
     },
     {
