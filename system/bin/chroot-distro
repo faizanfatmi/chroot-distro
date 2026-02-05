@@ -39,7 +39,7 @@ else
 	RST=''
 fi
 
-PROGRAM_VERSION="1.4.8"
+PROGRAM_VERSION="1.4.9"
 
 REPO_WONER="sabamdarif"
 REPO_NAME="chroot-distro"
@@ -1870,7 +1870,7 @@ command_list_running() {
 			if [ -d "$distro_data" ]; then
 				distro_name=$(basename "$distro_data")
 				is_running=false
-				
+
 				# Check if it has active mounts (logic from status.sh)
 				mount_tracker="${RUNTIME_DIR}/data/${distro_name}/mount.points"
 				if [ -f "$mount_tracker" ] && [ -s "$mount_tracker" ]; then
@@ -1917,7 +1917,6 @@ command_list_running() {
 		done
 	fi
 }
-
 
 #############################################################################
 #
