@@ -70,7 +70,7 @@ DEFAULT_PATH_ENV="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/
 BUSYBOXPATH="$(command -v busybox 2>/dev/null)"
 
 # variables to store distro information
-SUPPORTED_DISTRIBUTIONS="archlinux debian fedora ubuntu kali"
+SUPPORTED_DISTRIBUTIONS="alpine archlinux debian fedora manajro opensuse rockylinux ubuntu void kali trisquel"
 
 # JSON distro configuration paths
 DATA_DIR="${RUNTIME_DIR}/data"
@@ -581,6 +581,52 @@ get_distro_info() {
 			# Configure en_US.UTF-8 locale.
 			sed -i -E 's/#[[:space:]]?(en_US.UTF-8[[:space:]]+UTF-8)/\1/g' ./etc/locale.gen
 			run_chroot_cmd DEBIAN_FRONTEND=noninteractive dpkg-reconfigure locales
+		}
+		;;
+	"alpine")
+		# distro specfic configuration
+		distro_setup() {
+			busybox echo ""
+		}
+		;;
+	"manjaro")
+		# distro specfic configuration
+		distro_setup() {
+			# Fix environment variables on login or su.
+			local f
+			for f in su su-l system-local-login system-remote-login; do
+				echo "session  required  pam_env.so readenv=1" >>./etc/pam.d/"${f}"
+			done
+		}
+		;;
+	"opensuse")
+		# distro specfic configuration
+		distro_setup() {
+			# Lock package filesystem to remove issues regarding zypper dup
+			run_chroot_cmd zypper al filesystem
+		}
+		;;
+	"rockylinux")
+		# distro specfic configuration
+		distro_setup() {
+			busybox echo ""
+		}
+		;;
+	"trisquel")
+		# distro specfic configuration
+		distro_setup() {
+			# Configure en_US.UTF-8 locale.
+			sed -i -E 's/#[[:space:]]?(en_US.UTF-8[[:space:]]+UTF-8)/\1/g' ./etc/locale.gen
+			run_chroot_cmd DEBIAN_FRONTEND=noninteractive dpkg-reconfigure locales
+		}
+		;;
+	"void")
+		# distro specfic configuration
+		distro_setup() {
+			# Set default shell to bash.
+			run_chroot_cmd usermod --shell /bin/bash root
+			# Fix issue where come CA certificates links may not be created.
+			run_chroot_cmd update-ca-certificates --fresh
 		}
 		;;
 	*)

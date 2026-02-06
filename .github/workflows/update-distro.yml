@@ -8,7 +8,7 @@ on:
 
 env:
   # Currently supported distros
-  DISTROS: "archlinux debian ubuntu fedora kali"
+  DISTROS: "alpine archlinux debian fedora manjaro opensuse rockylinux ubuntu void kali trisquel"
   # Architectures to skip (space-separated)
   SKIP_ARCHS: "x86_64 i686 i386"
   # Repository info for download URLs

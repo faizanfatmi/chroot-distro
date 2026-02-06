@@ -29,11 +29,17 @@
 
 ## Supported Distributions
 
-- Debian
-- Ubuntu
-- Fedora
+- Alpine Linux
 - Arch Linux
+- Debian
+- Fedora
 - Kali Linux
+- Manjaro
+- OpenSUSE
+- Rocky Linux
+- Trisquel GNU/Linux
+- Ubuntu
+- Void Linux
 
 ---
 
