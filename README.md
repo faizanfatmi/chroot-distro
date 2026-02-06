@@ -4,44 +4,32 @@
 
 #### Install Linux distributions on Android devices using chroot
 
-![GitHub stars](https://img.shields.io/github/stars/sabamdarif/chroot-distro?style=for-the-badge) ![GitHub issues](https://img.shields.io/github/issues/sabamdarif/chroot-distro?color=violet&style=for-the-badge) ![GitHub License](https://img.shields.io/github/license/sabamdarif/chroot-distro?style=for-the-badge)
+![Release](https://img.shields.io/github/v/release/sabamdarif/chroot-distro?style=for-the-badge&color=blueviolet) ![GitHub License](https://img.shields.io/github/license/sabamdarif/chroot-distro?style=for-the-badge) ![Total Downloads](https://img.shields.io/github/downloads/sabamdarif/chroot-distro/total?style=for-the-badge&color=blueviolet)
 
 </div>
 
----
+## Prerequisites
 
 > [!WARNING]
 >
-> - Root access is required
-> - Back up important files before use
+> - **Back up important files before use**
 
----
-
-## Requirements
-
-- Rooted Android Device
-- Install the [latest BusyBox for Android NDK by osm0sis](https://github.com/osm0sis/android-busybox-ndk) as a [Magisk module](https://github.com/Magisk-Modules-Repo/busybox-ndk) (**Recommended:** v1.36.1)
+- **Rooted Android Device**
+- **BusyBox**: [osm0sis/android-busybox-ndk](https://github.com/osm0sis/android-busybox-ndk) (**Recommended:** v1.36.1)
 
 > [!TIP]
-> If you use KernelSU then there's no need to flash the busybox-ndk module, it already has builtin busybox support
+> KernelSU users do not need to flash busybox as it has built-in busybox support.
 
 ---
 
 ## Supported Distributions
 
-- Alpine Linux
-- Arch Linux
-- Debian
-- Fedora
-- Kali Linux
-- Manjaro
-- OpenSUSE
-- Rocky Linux
-- Trisquel GNU/Linux
-- Ubuntu
-- Void Linux
-
----
+|                                                                                                                         |                                                                                                                      |                                                                                                          |
+| :---------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------: |
+| ![Alpine Linux](https://img.shields.io/badge/Alpine_Linux-0D597F?style=for-the-badge&logo=alpine-linux&logoColor=white) |  ![Arch Linux](https://img.shields.io/badge/Arch_Linux-1793D1?style=for-the-badge&logo=arch-linux&logoColor=white)   |  ![Debian](https://img.shields.io/badge/Debian-A81D33?style=for-the-badge&logo=debian&logoColor=white)   |
+|          ![Fedora](https://img.shields.io/badge/Fedora-51A2DA?style=for-the-badge&logo=fedora&logoColor=white)          |  ![Kali Linux](https://img.shields.io/badge/Kali_Linux-557C94?style=for-the-badge&logo=kali-linux&logoColor=white)   | ![Manjaro](https://img.shields.io/badge/Manjaro-35BF5C?style=for-the-badge&logo=manjaro&logoColor=white) |
+|       ![OpenSUSE](https://img.shields.io/badge/OpenSUSE-73BA25?style=for-the-badge&logo=opensuse&logoColor=white)       | ![Rocky Linux](https://img.shields.io/badge/Rocky_Linux-10B981?style=for-the-badge&logo=rocky-linux&logoColor=white) |  ![Trisquel](https://img.shields.io/badge/Trisquel-0D597F?style=for-the-badge&logo=gnu&logoColor=white)  |
+|          ![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)          |  ![Void Linux](https://img.shields.io/badge/Void_Linux-478061?style=for-the-badge&logo=void-linux&logoColor=white)   |                                                                                                          |
 
 ## Quick Start
 
@@ -61,17 +49,17 @@ chroot-distro login debian
 
 ## Command Reference
 
-| Command       | Aliases                     | Description                  |
-| ------------- | --------------------------- | ---------------------------- |
-| `help`        | `--help`, `-h`, `he`, `hel` | Display help information     |
-| `version`     | `--version`, `-v`           | Show version information     |
-| `list`        | `li`, `ls`                  | List available distributions |
-| `list-running`|                             | List currently running distros |
-| `install`     | `i`, `in`, `ins`, `add`     | Install a distribution       |
-| `login`       | `sh`                        | Enter distribution shell     |
-| `remove`      | `rm`                        | Remove a distribution        |
-| `unmount`     | `umount`, `um`              | Unmount distribution         |
-| `clear-cache` | `clear`, `cl`               | Clear downloaded files       |
+| Command        | Aliases                     | Description                    |
+| -------------- | --------------------------- | ------------------------------ |
+| `help`         | `--help`, `-h`, `he`, `hel` | Display help information       |
+| `version`      | `--version`, `-v`           | Show version information       |
+| `list`         | `li`, `ls`                  | List available distributions   |
+| `list-running` |                             | List currently running distros |
+| `install`      | `i`, `in`, `ins`, `add`     | Install a distribution         |
+| `login`        | `sh`                        | Enter distribution shell       |
+| `remove`       | `rm`                        | Remove a distribution          |
+| `unmount`      | `umount`, `um`              | Unmount distribution           |
+| `clear-cache`  | `clear`, `cl`               | Clear downloaded files         |
 
 ---
 
@@ -226,15 +214,25 @@ _Every contribution, no matter how small, helps keep this project alive and grow
 
 ## License
 
-This project is licensed under the [GNU General Public License v3.0](https://choosealicense.com/licenses/gpl-3.0/).
+This project is licensed under the **[GNU General Public License v3.0](LICENSE)**
 
-## Acknowledgments
+```
+Copyright (C) 2025 sabamdarif
 
-This project builds upon the work of:
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+```
 
-- [proot-distro](https://github.com/termux/proot-distro)
-- [Magisk-Modules-Alt-Repo/chroot-distro](https://github.com/Magisk-Modules-Alt-Repo/chroot-distro)
-- [ravindu644/Ubuntu-Chroot](https://github.com/ravindu644/Ubuntu-Chroot)
+---
+
+## Acknowledgments:
+
+Special thanks to:
+
+- [LinuxDroidMaster/Termux-Desktops](https://github.com/LinuxDroidMaster/Termux-Desktops)
+- [phoenixbyrd/Termux_XFCE](https://github.com/phoenixbyrd/Termux_XFCE)
 
 ---
 
