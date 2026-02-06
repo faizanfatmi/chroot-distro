@@ -465,10 +465,14 @@ safe_mount() {
 #############################################################################
 
 # Initialize distros data - copy from MODDIR if not present
+
 init_distros_data() {
+	# Ensure data directory exists
+	busybox mkdir -p "$DATA_DIR"
+
+	# Copy distros.json if not present
 	if [ ! -f "$DISTROS_JSON" ]; then
 		if [ -f "$MODDIR_DISTROS_JSON" ]; then
-			busybox mkdir -p "$DATA_DIR"
 			busybox cp "$MODDIR_DISTROS_JSON" "$DISTROS_JSON"
 		fi
 	fi
@@ -482,52 +486,14 @@ json_get_distro_field() {
 
 	[ ! -f "$DISTROS_JSON" ] && return 1
 
-	busybox awk -v distro="$distro_name" -v field="$field_name" '
-    BEGIN { in_distro=0; found=0 }
-    /"name"[[:space:]]*:[[:space:]]*"/ {
-        # Check if we found the distro
-        line=$0
-        gsub(/.*"name"[[:space:]]*:[[:space:]]*"/, "", line)
-        gsub(/".*/, "", line)
-        if (line == distro) { in_distro=1 }
-        else if (in_distro) { in_distro=0 }
-    }
-    in_distro && $0 ~ "\"" field "\"[[:space:]]*:" {
-        line=$0
-        gsub(/.*"/ field "\"[[:space:]]*:[[:space:]]*/, "", line)
-
-        # Check if array
-        if (match(line, /^\[/)) {
-            gsub(/^\[/, "", line)
-            gsub(/\].*/, "", line)
-            gsub(/"/, "", line)
-            gsub(/,/, " ", line)
-            print line
-        } else {
-            # String value
-            gsub(/^"/, "", line)
-            gsub(/".*/, "", line)
-            print line
-        }
-        found=1
-        exit
-    }
-    END { exit !found }
-    ' "$DISTROS_JSON"
+	awk-jq -v action="get_value" -v distro="$distro_name" -v field="$field_name" "$DISTROS_JSON"
 }
 
 # Get list of all distro names from JSON
 json_get_distro_names() {
 	[ ! -f "$DISTROS_JSON" ] && return 1
 
-	busybox awk '
-    /"name"[[:space:]]*:[[:space:]]*"/ {
-        line=$0
-        gsub(/.*"name"[[:space:]]*:[[:space:]]*"/, "", line)
-        gsub(/".*/, "", line)
-        print line
-    }
-    ' "$DISTROS_JSON"
+	awk-jq -v action="get_names" "$DISTROS_JSON"
 }
 
 #############################################################################
