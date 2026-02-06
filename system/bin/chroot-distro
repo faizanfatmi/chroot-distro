@@ -513,6 +513,13 @@ json_get_distro_names() {
 	awk-jq -v action="get_names" "$DISTROS_JSON"
 }
 
+# Get list information (name|version|supported_arch) for all distros
+json_get_list_info() {
+	[ ! -f "$DISTROS_JSON" ] && return 1
+
+	awk-jq -v action="get_list_info" "$DISTROS_JSON"
+}
+
 #############################################################################
 #
 # FUNCTION TO GET DISTRO INFORMATION
@@ -1894,37 +1901,49 @@ command_list() {
 		json_output="{\"distributions\":["
 		first_item=true
 
-		for distro in $SUPPORTED_DISTRIBUTIONS; do
-			supported_archs=$(get_distro_info "$distro" "supported_arch")
+		if [ -f "$DISTROS_JSON" ]; then
+			# Process all distros in one go
+			# We need to capture the output of the loop to a variable or file
+			# because piping creates a subshell and we can't easily update json_output variable
+			# Solution: Construct the JSON body in the loop and print it
 
-			# Check if current architecture is supported for this distro
-			arch_supported=false
-			for arch in $supported_archs; do
-				if [ "$arch" = "$current_arch" ]; then
-					arch_supported=true
-					break
+			json_body=$(json_get_list_info | sort | while IFS='|' read -r distro version supported_archs; do
+				# Check if current architecture is supported for this distro
+				arch_supported=false
+				for arch in $supported_archs; do
+					if [ "$arch" = "$current_arch" ]; then
+						arch_supported=true
+						break
+					fi
+				done
+
+				# Only include distributions that support current architecture
+				if [ "$arch_supported" = "true" ]; then
+					# Check if already installed
+					if [ -d "${INSTALLED_ROOTFS_DIR}/${distro}" ]; then
+						installed="true"
+					else
+						installed="false"
+					fi
+
+					printf "{\"name\":\"%s\",\"version\":\"%s\",\"installed\":%s}," "$distro" "$version" "$installed"
 				fi
-			done
+			done)
 
-			# Only include distributions that support current architecture
-			if [ "$arch_supported" = "true" ]; then
-				# Check if already installed
-				if [ -d "${INSTALLED_ROOTFS_DIR}/${distro}" ]; then
-					installed="true"
-				else
-					installed="false"
-				fi
+			# Remove trailing mess (it's a comma)
+			# But since we printed comma at the end of each item, we need to handle it.
+			# Actually, let's fix the trailing comma issue.
+			# Using sed to remove the last character is risky if empty.
 
-				if [ "$first_item" = "true" ]; then
-					first_item=false
-				else
-					json_output="${json_output},"
-				fi
+			# Better approach: print strictly valid JSON fragments and join them.
+			# The loop above prints {object},
 
-				version=$(get_distro_info "$distro" "version")
-				json_output="${json_output}{\"name\":\"${distro}\",\"version\":\"${version}\",\"installed\":${installed}}"
+			if [ -n "$json_body" ]; then
+				# Remove trailing comma
+				json_body="${json_body%,}"
+				json_output="${json_output}${json_body}"
 			fi
-		done
+		fi
 
 		json_output="${json_output}]}"
 		printf '%s\n' "$json_output"
@@ -1935,36 +1954,47 @@ command_list() {
 	msg "${GREEN} Available distributions:${RST}"
 	msg
 
-	# Check each supported distribution
-	for distro in $SUPPORTED_DISTRIBUTIONS; do
-		supported_archs=$(get_distro_info "$distro" "supported_arch")
+	# Get all distro info at once
+	# Format: name|version|supported_archs
+	if [ -f "$DISTROS_JSON" ]; then
+		json_get_list_info | sort | while IFS='|' read -r distro version supported_archs; do
+			# Check if current architecture is supported for this distro
+			arch_supported=false
+			for arch in $supported_archs; do
+				if [ "$arch" = "$current_arch" ]; then
+					arch_supported=true
+					break
+				fi
+			done
 
-		# Check if current architecture is supported for this distro
-		arch_supported=false
-		for arch in $supported_archs; do
-			if [ "$arch" = "$current_arch" ]; then
-				arch_supported=true
-				break
+			# Only show distributions that support current architecture
+			if [ "$arch_supported" = "true" ]; then
+				# Check if already installed
+				if [ -d "${INSTALLED_ROOTFS_DIR}/${distro}" ]; then
+					status_text="[installed]"
+				else
+					status_text="[not installed]"
+				fi
+
+				if [ -n "$version" ]; then
+					msg "  ${CYAN}* ${YELLOW}${distro} ${GREEN}(${version}) ${BLUE}${status_text}${RST}"
+				else
+					msg "  ${CYAN}* ${YELLOW}${distro} ${BLUE}${status_text}${RST}"
+				fi
 			fi
 		done
-
-		# Only show distributions that support current architecture
-		if [ "$arch_supported" = "true" ]; then
-			# Check if already installed
+	else
+		# Fallback if specific JSON not available (should rarely happen if init_distros_data works)
+		for distro in $SUPPORTED_DISTRIBUTIONS; do
+			status_text="[unknown]"
 			if [ -d "${INSTALLED_ROOTFS_DIR}/${distro}" ]; then
 				status_text="[installed]"
 			else
 				status_text="[not installed]"
 			fi
-
-			version=$(get_distro_info "$distro" "version")
-			if [ -n "$version" ]; then
-				msg "  ${CYAN}* ${YELLOW}${distro} ${GREEN}(${version}) ${BLUE}${status_text}${RST}"
-			else
-				msg "  ${CYAN}* ${YELLOW}${distro} ${BLUE}${status_text}${RST}"
-			fi
-		fi
-	done
+			msg "  ${CYAN}* ${YELLOW}${distro} ${BLUE}${status_text}${RST}"
+		done
+	fi
 
 	msg
 	msg "${CYAN}Install selected one with: ${GREEN}${PROGRAM_NAME} install <name>${RST}"

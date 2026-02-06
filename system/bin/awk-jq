@@ -66,6 +66,41 @@ END {
             i++
         }
         if (!found) exit 1
+    } else if (action == "get_list_info") {
+        distros = getkey(json, "distros")
+        i = 0
+        while (1) {
+            item = getidx(distros, i)
+            if (item == "null") break
+
+            name = getkey(item, "name")
+            gsub(/^"|"$/, "", name)
+
+            if (name != "null") {
+                version = getkey(item, "version")
+                gsub(/^"|"$/, "", version)
+                if (version == "null") version = ""
+
+                archs = getkey(item, "supported_arch")
+                supported_archs = ""
+                if (archs != "null") {
+                   # Handle array
+                    if (substr(archs, 1, 1) == "[") {
+                        gsub(/^\[|\]$/, "", archs)
+                        gsub(/,/, " ", archs)
+                        gsub(/"/, "", archs)
+                        gsub(/  +/, " ", archs)
+                        gsub(/^ | $/, "", archs)
+                        supported_archs = archs
+                    } else {
+                        gsub(/^"|"$/, "", archs)
+                        supported_archs = archs
+                    }
+                }
+                print name "|" version "|" supported_archs
+            }
+            i++
+        }
     } else {
         # Standard query support
         if (q == ".") {
