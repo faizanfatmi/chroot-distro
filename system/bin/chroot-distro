@@ -593,7 +593,7 @@ get_distro_info() {
 		# distro specfic configuration
 		distro_setup() {
 			# Fix environment variables on login or su.
-			local f
+			f=""
 			for f in su su-l system-local-login system-remote-login; do
 				echo "session  required  pam_env.so readenv=1" >>./etc/pam.d/"${f}"
 			done
