@@ -14,6 +14,13 @@ const clearCacheBtn = document.getElementById("clear-cache-btn");
 const helpModal = document.getElementById("help-modal");
 const closeHelpModalBtn = document.getElementById("close-help-modal");
 const helpContent = document.getElementById("help-content");
+const searchContainer = document.getElementById("search-container");
+const titleContainer = document.getElementById("title-container");
+const searchInput = document.getElementById("search-input");
+const searchCloseBtn = document.getElementById("search-close-btn");
+const searchBtn = document.getElementById("search-btn");
+
+let allDistros = [];
 
 // Track active terminals
 const activeTerminals = new Map();
@@ -909,6 +916,62 @@ function renderError(message) {
 }
 
 /**
+ * Render distributions to the DOM
+ * @param {Array} distros
+ */
+function renderDistros(distros) {
+	mainContent.innerHTML = "";
+
+	const title = document.createElement("div");
+	title.className = "section-title";
+	title.textContent = "Available Distributions";
+	mainContent.appendChild(title);
+
+	distros.forEach((distro) => {
+		const card = createDistroCard(distro);
+		mainContent.appendChild(card);
+	});
+
+	if (distros.length === 0) {
+		mainContent.innerHTML += `
+            <div class="loading-container">
+                <span>No distributions found</span>
+            </div>
+        `;
+	}
+}
+
+/**
+ * Filter distributions based on search query
+ * @param {string} query
+ */
+function filterDistros(query) {
+	const lowerQuery = query.toLowerCase();
+	const filtered = allDistros.filter((d) => d.name.toLowerCase().includes(lowerQuery));
+	renderDistros(filtered);
+}
+
+/**
+ * Toggle search mode
+ * @param {boolean} show
+ */
+function toggleSearch(show) {
+	const refreshBtn = document.getElementById("refresh-btn");
+	if (show) {
+		titleContainer.classList.add("hidden");
+		searchContainer.classList.remove("hidden");
+		if (refreshBtn) refreshBtn.classList.add("hidden");
+		searchInput.focus();
+	} else {
+		searchContainer.classList.add("hidden");
+		titleContainer.classList.remove("hidden");
+		if (refreshBtn) refreshBtn.classList.remove("hidden");
+		searchInput.value = "";
+		filterDistros(""); // Reset filter
+	}
+}
+
+/**
  * Load and render distributions
  */
 async function loadDistros() {
@@ -920,25 +983,12 @@ async function loadDistros() {
     `;
 
 	try {
-		const distros = await fetchDistros();
-		mainContent.innerHTML = "";
-
-		const title = document.createElement("div");
-		title.className = "section-title";
-		title.textContent = "Available Distributions";
-		mainContent.appendChild(title);
-
-		distros.forEach((distro) => {
-			const card = createDistroCard(distro);
-			mainContent.appendChild(card);
-		});
-
-		if (distros.length === 0) {
-			mainContent.innerHTML += `
-                <div class="loading-container">
-                    <span>No distributions available</span>
-                </div>
-            `;
+		allDistros = await fetchDistros();
+		// Re-apply filter if search is active (though loadDistros is usually full refresh)
+		if (!searchContainer.classList.contains("hidden") && searchInput.value) {
+			filterDistros(searchInput.value);
+		} else {
+			renderDistros(allDistros);
 		}
 	} catch (e) {
 		console.error("Failed to load distributions:", e);
@@ -951,9 +1001,6 @@ async function loadDistros() {
  */
 async function init() {
 	document.querySelectorAll(".ripple-element").forEach(applyRipple);
-
-	await fetchVersion();
-	await loadDistros();
 
 	const refreshBtn = document.getElementById("refresh-btn");
 	if (refreshBtn) {
@@ -975,6 +1022,29 @@ async function init() {
 			if (e.target === helpModal) helpModal.classList.remove("open");
 		});
 	if (clearCacheBtn) clearCacheBtn.addEventListener("click", clearCache);
+
+	// Search Listeners
+	if (searchBtn) {
+		searchBtn.addEventListener("click", () => toggleSearch(true));
+	}
+	if (searchCloseBtn) {
+		searchCloseBtn.addEventListener("click", () => toggleSearch(false));
+	}
+	if (searchInput) {
+		searchInput.addEventListener("input", (e) => filterDistros(e.target.value));
+		// Close on Escape
+		searchInput.addEventListener("keydown", (e) => {
+			if (e.key === "Escape") toggleSearch(false);
+		});
+	}
+
+	// Close search when switching views
+	if (navSettings) {
+		navSettings.addEventListener("click", () => toggleSearch(false));
+	}
+
+	await fetchVersion();
+	await loadDistros();
 }
 
 document.addEventListener("DOMContentLoaded", init);
