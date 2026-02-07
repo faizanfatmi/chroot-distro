@@ -1919,8 +1919,8 @@ command_list() {
 
 				# Only include distributions that support current architecture
 				if [ "$arch_supported" = "true" ]; then
-					# Check if already installed
-					if [ -d "${INSTALLED_ROOTFS_DIR}/${distro}" ]; then
+					# Check if already installed (must have /etc to be considered fully installed)
+					if [ -d "${INSTALLED_ROOTFS_DIR}/${distro}" ] && [ -e "${INSTALLED_ROOTFS_DIR}/${distro}/etc" ]; then
 						installed="true"
 					else
 						installed="false"
@@ -1969,8 +1969,8 @@ command_list() {
 
 			# Only show distributions that support current architecture
 			if [ "$arch_supported" = "true" ]; then
-				# Check if already installed
-				if [ -d "${INSTALLED_ROOTFS_DIR}/${distro}" ]; then
+				# Check if already installed (must have /etc to be considered fully installed)
+				if [ -d "${INSTALLED_ROOTFS_DIR}/${distro}" ] && [ -e "${INSTALLED_ROOTFS_DIR}/${distro}/etc" ]; then
 					status_text="[installed]"
 				else
 					status_text="[not installed]"
@@ -1987,7 +1987,8 @@ command_list() {
 		# Fallback if specific JSON not available (should rarely happen if init_distros_data works)
 		for distro in $SUPPORTED_DISTRIBUTIONS; do
 			status_text="[unknown]"
-			if [ -d "${INSTALLED_ROOTFS_DIR}/${distro}" ]; then
+			# Check if already installed (must have /etc to be considered fully installed)
+			if [ -d "${INSTALLED_ROOTFS_DIR}/${distro}" ] && [ -e "${INSTALLED_ROOTFS_DIR}/${distro}/etc" ]; then
 				status_text="[installed]"
 			else
 				status_text="[not installed]"
