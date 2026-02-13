@@ -50,18 +50,21 @@ jobs:
 
           echo "Injecting serviced.py into $archive..." >&2
 
-          # Extract archive
-          tar -xf "$archive" -C "$temp_root"
+          # Extract archive (with sudo to handle strict permissions)
+          sudo tar -xf "$archive" -C "$temp_root"
 
           # Inject serviced
-          mkdir -p "$temp_root/bin"
-          cp tools/serviced.py "$temp_root/bin/serviced"
-          chmod 755 "$temp_root/bin/serviced"
+          sudo mkdir -p "$temp_root/bin"
+          sudo cp tools/serviced.py "$temp_root/bin/serviced"
+          sudo chmod 755 "$temp_root/bin/serviced"
 
           # Repack archive
-          tar -C "$temp_root" -cJf "$archive" .
+          sudo XZ_OPT="$XZ_OPT" tar -C "$temp_root" -cJf "$archive" .
 
-          rm -rf "$temp_root"
+          # Restore ownership to runner user
+          sudo chown $(id -u):$(id -g) "$archive"
+
+          sudo rm -rf "$temp_root"
         }
 
         # Function to extract version from /etc/os-release in archive
