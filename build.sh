@@ -32,7 +32,7 @@ zip -r chroot-distro.zip . \
 	-x "webui/*" \
 	-x "webui" \
 	-x "build.sh" \
-	-x "tools/*"
+	-x "build.sh"
 
 ls -lh chroot-distro.zip
 echo "✅ Created chroot-distro.zip"

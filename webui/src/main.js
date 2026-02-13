@@ -1,6 +1,7 @@
 import { exec, spawn, toast } from "kernelsu";
 
 const LOG_DIR = "/data/local/tmp/chroot-distro-logs";
+const SETTINGS_PATH = "/data/local/chroot-distro/data/settings.conf";
 const mainContent = document.getElementById("main-content");
 const settingsView = document.getElementById("settings-view");
 const versionText = document.getElementById("version-text");
@@ -354,6 +355,7 @@ function switchView(view) {
 		settingsView.classList.remove("hidden");
 		navHome.classList.remove("active");
 		navSettings.classList.add("active");
+		loadSettings();
 	}
 }
 
@@ -1115,6 +1117,70 @@ async function loadDistros() {
 }
 
 /**
+ * Load settings from file and update UI
+ */
+async function loadSettings() {
+	const toggleServiced = document.getElementById("toggle-serviced");
+	const toggleServicedVerbose = document.getElementById("toggle-serviced-verbose");
+
+	try {
+		const { errno, stdout } = await exec(`cat "${SETTINGS_PATH}"`);
+		let serviced = false;
+		let verbose = false;
+
+		if (errno === 0 && stdout) {
+			const lines = stdout.split("\n");
+			lines.forEach((line) => {
+				const trimmed = line.trim();
+				if (trimmed.startsWith("SERVICED=")) {
+					serviced = trimmed.split("=")[1].trim() === "true";
+				}
+				if (trimmed.startsWith("SERVICED_VERBOSE_MODE=")) {
+					verbose = trimmed.split("=")[1].trim() === "true";
+				}
+			});
+		}
+
+		if (toggleServiced) {
+			toggleServiced.checked = serviced;
+			updateVerboseToggleState(serviced);
+		}
+		if (toggleServicedVerbose) toggleServicedVerbose.checked = verbose;
+	} catch (e) {
+		console.warn("Failed to load settings:", e);
+		// Default to false if read fails
+		if (toggleServiced) toggleServiced.checked = false;
+		if (toggleServicedVerbose) toggleServicedVerbose.checked = false;
+	}
+}
+
+/**
+ * Save a single setting to file
+ * @param {string} key
+ * @param {boolean} value
+ */
+async function saveSetting(key, value) {
+	const valStr = value ? "true" : "false";
+	const cmd = `
+        mkdir -p "$(dirname "${SETTINGS_PATH}")"
+        if [ ! -f "${SETTINGS_PATH}" ]; then touch "${SETTINGS_PATH}"; fi
+        if grep -q "^${key}=" "${SETTINGS_PATH}"; then
+            sed -i "s/^${key}=.*/${key}=${valStr}/" "${SETTINGS_PATH}"
+        else
+            echo "${key}=${valStr}" >> "${SETTINGS_PATH}"
+        fi
+    `.trim();
+
+	try {
+		await exec(cmd);
+		// showToast("Settings saved"); // Optional: might be too noisy for every toggle
+	} catch (e) {
+		console.error("Failed to save setting:", e);
+		showToast("Failed to save settings", true);
+	}
+}
+
+/**
  * Initialize the app
  */
 async function init() {
@@ -1157,8 +1223,46 @@ async function init() {
 		navSettings.addEventListener("click", () => toggleSearch(false));
 	}
 
+	const toggleServiced = document.getElementById("toggle-serviced");
+	if (toggleServiced) {
+		toggleServiced.addEventListener("change", (e) => {
+			saveSetting("SERVICED", e.target.checked);
+			updateVerboseToggleState(e.target.checked);
+		});
+	}
+
+	const toggleServicedVerbose = document.getElementById("toggle-serviced-verbose");
+	if (toggleServicedVerbose) {
+		toggleServicedVerbose.addEventListener("change", (e) => {
+			saveSetting("SERVICED_VERBOSE_MODE", e.target.checked);
+		});
+	}
+
 	await fetchVersion();
+	await loadSettings();
 	await loadDistros();
+}
+
+function updateVerboseToggleState(enabled) {
+	const card = document.getElementById("setting-serviced-verbose");
+	const toggle = document.getElementById("toggle-serviced-verbose");
+	if (card && toggle) {
+		if (enabled) {
+			card.classList.remove("disabled");
+			toggle.disabled = false;
+		} else {
+			card.classList.add("disabled");
+			toggle.disabled = true;
+			toggle.checked = false; // Optional: uncheck when disabled
+			// Note: We might want to save the unchecked state or keep the setting as is but visually disabled.
+			// For now, let's just disable the UI. If we uncheck, we should probably save it too?
+			// The user requirement said "only be clickable", implying visual disablement.
+			// Let's keep the value (setting) as is, just disable interaction.
+			// CORRECTION: If we don't uncheck it visually, it might look confusing if it was on.
+			// However, if we uncheck it here, we don't save it to file unless we call saveSetting.
+			// Let's keep it simple: just disable interaction. The shell script handles the logic (if SERVICED=false, VERBOSE is ignored).
+		}
+	}
 }
 
 document.addEventListener("DOMContentLoaded", init);

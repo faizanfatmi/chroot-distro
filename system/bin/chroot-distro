@@ -77,6 +77,19 @@ DATA_DIR="${RUNTIME_DIR}/data"
 DISTROS_JSON="${DATA_DIR}/distros.json"
 MODDIR_DATA="${MODDIR}/data"
 MODDIR_DISTROS_JSON="${MODDIR_DATA}/distros.json"
+SETTINGS_CONF="${DATA_DIR}/settings.conf"
+
+# Source user settings (env vars take precedence)
+if [ -f "${SETTINGS_CONF}" ]; then
+	_saved_serviced="${SERVICED:-}"
+	_saved_verbose="${SERVICED_VERBOSE_MODE:-}"
+	# shellcheck source=/dev/null
+	. "${SETTINGS_CONF}"
+	# Restore env-var overrides
+	[ -n "${_saved_serviced}" ] && SERVICED="${_saved_serviced}"
+	[ -n "${_saved_verbose}" ] && SERVICED_VERBOSE_MODE="${_saved_verbose}"
+	unset _saved_serviced _saved_verbose
+fi
 
 # Mount point tracking file - now distro-specific: ${RUNTIME_DIR}/${distro_name}/mount.points
 
@@ -1982,13 +1995,25 @@ command_login() {
 
 	##################################################################################
 
-	# Docker Configuration
 	configure_docker_runtime "$distro_name"
 
-	# Start enabled services if SERVICED=true
 	if [ "${SERVICED}" = "true" ]; then
+		if [ ! -x "${INSTALLED_ROOTFS_DIR}/${distro_name}/bin/serviced" ]; then
+			if [ -f "${MODDIR}/tools/serviced.py" ]; then
+				msg "${YELLOW}Installing serviced to /bin/serviced...${RST}"
+				cp "${MODDIR}/tools/serviced.py" "${INSTALLED_ROOTFS_DIR}/${distro_name}/bin/serviced"
+				chmod +x "${INSTALLED_ROOTFS_DIR}/${distro_name}/bin/serviced"
+			else
+				msg "${YELLOW}Warning: serviced source not found at ${MODDIR}/tools/serviced.py, skipping auto-install${RST}"
+			fi
+		fi
+
 		if [ -x "${INSTALLED_ROOTFS_DIR}/${distro_name}/bin/serviced" ]; then
-			run_chroot_cmd /bin/serviced start
+			if [ "${SERVICED_VERBOSE_MODE}" = "true" ]; then
+				run_chroot_cmd /bin/serviced --verbose start
+			else
+				run_chroot_cmd /bin/serviced start
+			fi
 		else
 			msg "${YELLOW}Warning: serviced not found at /bin/serviced, skipping service start${RST}"
 		fi
