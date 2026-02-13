@@ -13,6 +13,8 @@ Commands:
     start     <service>   Start a service
     stop      <service>   Stop a service
     restart   <service>   Restart a service
+    enable    <service>   Enable service to start on boot
+    disable   <service>   Disable service from starting on boot
     status    <service>   Show service status
     log       <service>   Show service log (last 50 lines)
     list                  List all discovered services
@@ -359,6 +361,10 @@ class UnitFile:
         val = self.get("Unit", "After", "")
         return val.split() if val else []
 
+    @property
+    def condition_path_exists(self):
+        return self.get("Unit", "ConditionPathExists", "")
+
 
 def parse_exec_cmd(cmd_str):
     """Parse a systemd ExecStart/ExecStop command string.
@@ -651,6 +657,7 @@ class ServiceManager:
             log_info("[DRY RUN] Would execute: %s", " ".join(parts))
             return (0, 12345)
 
+        cwd = unit.working_directory or None
         if cwd and not os.path.isdir(cwd):
             cwd = None
 
@@ -792,6 +799,7 @@ class ServiceManager:
         # Aggressive cleanup before start to ensure fresh state
         self._pkill_service(name, unit)
 
+        cond_path = unit.condition_path_exists
         if cond_path:
             negate = cond_path.startswith("!")
             check_path = cond_path.lstrip("!")
