@@ -19,6 +19,9 @@ bootstrap_distribution() {
 			-f "${WORKDIR}/archlinux-${arch}.tar.gz" \
 			-C "${WORKDIR}/archlinux-$(translate_arch "$arch")"
 
+		# Disable pacman sandbox before any pacman operations (Landlock not supported in CI)
+		sudo sed -i 's/#DisableSandbox/DisableSandbox/' "${WORKDIR}/archlinux-$(translate_arch "$arch")/etc/pacman.conf"
+
 		cat <<-EOF | sudo unshare -mpf bash -e -
 			rm -f "${WORKDIR}/archlinux-$(translate_arch "$arch")/etc/resolv.conf"
 			echo "nameserver 1.1.1.1" > "${WORKDIR}/archlinux-$(translate_arch "$arch")/etc/resolv.conf"
@@ -34,7 +37,6 @@ bootstrap_distribution() {
 				chroot "${WORKDIR}/archlinux-$(translate_arch "$arch")" pacman -Rnsc --noconfirm linux-armv7 linux-firmware
 			fi
 			chroot "${WORKDIR}/archlinux-$(translate_arch "$arch")" pacman -Syu --noconfirm
-			sed -i 's/#DisableSandbox/DisableSandbox/' "${WORKDIR}/archlinux-$(translate_arch "$arch")/etc/pacman.conf"
 		EOF
 
 		sudo rm -rf "${WORKDIR:?}/archlinux-$(translate_arch "$arch")"/var/cache/pacman/pkg
@@ -59,6 +61,9 @@ bootstrap_distribution() {
 		sudo tar -xp --strip-components=1 --acls --xattrs --xattrs-include='*' \
 			-f "${WORKDIR}/archlinux-x86_64.tar.zst" \
 			-C "${WORKDIR}/archlinux-bootstrap"
+
+		# Disable pacman sandbox in bootstrap environment (Landlock not supported in CI)
+		sudo sed -i 's/#DisableSandbox/DisableSandbox/' "${WORKDIR}/archlinux-bootstrap/etc/pacman.conf"
 
 		cat <<-EOF | sudo unshare -mpf bash -e -
 			rm -f "${WORKDIR}/archlinux-bootstrap/etc/resolv.conf"
