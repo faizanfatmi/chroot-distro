@@ -63,6 +63,54 @@ chroot-distro login debian
 
 ---
 
+## Service Management
+
+Chroot Distro includes a lightweight service manager called `serviced` it can start a systemd process without systemd
+
+### Configuration
+
+The service manager behavior can be configured via the `settings.conf` file located at:
+
+```
+/data/local/chroot-distro/data/settings.conf
+```
+
+> [!TIP]
+> This file can be easily configured using the WebUI.
+
+### Options
+
+| Option                  | Description                                                                 |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `SERVICED`              | Set to `true` to enable the service manager.                                |
+| `SERVICED_VERBOSE_MODE` | Set to `true` to enable verbose logging for debugging service start issues. |
+
+### Usage
+
+When `SERVICED` is enabled, `chroot-distro` will automatically start the built-in `serviced` manager when you login. You can then use it to manage services:
+
+```bash
+# Start a service
+serviced start sshd
+
+# Start all enabled services
+serviced start
+
+# Enable a service to start on boot
+serviced enable sshd
+
+# Disable a service
+serviced disable sshd
+
+# Check status
+serviced status sshd
+
+# List all services
+serviced list
+```
+
+---
+
 ## Commands
 
 ### `help`

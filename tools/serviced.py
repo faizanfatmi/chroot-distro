@@ -228,7 +228,6 @@ class UnitFile:
                 prev_line = ""
                 for raw_line in f:
                     line = raw_line.rstrip("\n")
-                    # Handle line continuation
                     if line.endswith("\\"):
                         prev_line += line[:-1].strip() + " "
                         continue
@@ -236,7 +235,6 @@ class UnitFile:
                         line = prev_line + line.strip()
                         prev_line = ""
                     line = line.strip()
-                    # Skip comments and empty lines
                     if not line or line.startswith("#") or line.startswith(";"):
                         continue
                     m = re.match(r"^\[(.+)\]$", line)
@@ -251,7 +249,6 @@ class UnitFile:
                         value = value.strip()
                         if key not in self._data[section]:
                             self._data[section][key] = []
-                        # Empty value resets the list (systemd behavior)
                         if value == "":
                             self._data[section][key] = []
                         else:
@@ -455,7 +452,6 @@ def strip_socket_activation(cmd_parts):
 def load_environment_file(path):
     """Load environment variables from a file (EnvironmentFile= directive)."""
     env = {}
-    # Handle the - prefix (don't error if file missing)
     optional = False
     if path.startswith("-"):
         optional = True
@@ -1616,7 +1612,6 @@ Examples:
         "-v", "--verbose", action="store_true", help="Enable verbose/debug output"
     )
 
-    # Subparsers for commands
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     p_start = subparsers.add_parser(
