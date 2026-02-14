@@ -1454,6 +1454,25 @@ configure_docker_runtime() {
 	fi
 }
 
+configure_flatpak_runtime() {
+	distro_name="$1"
+	# Check if bwrap exists
+	if [ -x "${INSTALLED_ROOTFS_DIR}/${distro_name}/usr/bin/bwrap" ]; then
+		bwrap_path="${INSTALLED_ROOTFS_DIR}/${distro_name}/usr/bin/bwrap"
+	elif [ -x "${INSTALLED_ROOTFS_DIR}/${distro_name}/bin/bwrap" ]; then
+		bwrap_path="${INSTALLED_ROOTFS_DIR}/${distro_name}/bin/bwrap"
+	else
+		return 0
+	fi
+
+	# Check if setuid bit is set
+	if [ ! -u "$bwrap_path" ]; then
+		msg "${YELLOW}Warning: bwrap (Flatpak) does not have setuid bit set.${RST}"
+		msg "${CYAN}Setting setuid bit on $bwrap_path to fix namespace issues...${RST}"
+		busybox chmod u+s "$bwrap_path" 2>/dev/null || msg "${BRED}Error: failed to set setuid on bwrap.${RST}"
+	fi
+}
+
 command_login() {
 	use_termux_home=false
 	make_termux_tmp_shared=false
@@ -1990,6 +2009,7 @@ command_login() {
 	##################################################################################
 
 	configure_docker_runtime "$distro_name"
+	configure_flatpak_runtime "$distro_name"
 
 	if [ "${SERVICED}" = "true" ]; then
 		if [ ! -x "${INSTALLED_ROOTFS_DIR}/${distro_name}/bin/serviced" ]; then
