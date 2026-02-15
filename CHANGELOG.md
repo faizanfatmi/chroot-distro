@@ -1,5 +1,41 @@
 # Changelog
 
+### v1.5.2
+
+- feat(ci/checkup-and-release): don't create the chore: update files for release commit on relase instead it will do `git commit --amend --no-edit` and force push
+- feat(ci/checkup-and-release): skip all commit from github-actions[bot] when generating changelog
+- adddistro: archlinux (#12)
+- adddistro: void (#11)
+- feat(ci/build-distro): improve trigger rules
+- fix(ci/publish-distro): don't remove existing data from distros.json
+- fix(ci/build-distro): don't run release on pull_request
+- adddistro: kali (#10)
+- fix(ci/plan-build): don't build all distro when i just add one
+- fix(ci/build-rootfs): install missing debootstrap
+- refactor(ci/build-distro): divide into smaller chunks
+- fix(ci/build-distro): fix error from function 'fromJson': Unexpected symbol: 'alpine'
+- fix: disable archlinux, kali, void for now
+- feat(ci/build-distro): run build using matrix
+- ci(build-distro & checkup-and-release): update build trigger rules
+- fix: fix debian build issue
+- fix: fix serviced.py not found error
+- fix: fix archlinux build issue
+- feat: add option to build rootfs (based on proot-distro)
+- feat: change project structure
+- fix(ci/update-distro): fix serviced inject issue
+- docs: add serviced and settings guide
+- feat(serviced): improve dependency detection
+- feat(chroot-distro): set setuid on bwrap if missing to enable Flatpak support
+- feat(chroot-distro): remove `Kill stale Docker processes` section, it's handled by serviced
+- feat(chroot-distroo & webui): add support for saveing the SERVICED and SERVICED VERBOSE MODE in settings.conf file
+- feat(serviced): just use VERBOSE
+- feat(chroot-distro): add new option to auto start enabled process on login
+- fix(serviced): pass pyright and mising comments
+- fix(ci/update-distro): fix distro build issue
+- feat: add serviced a simple alternative to systemctl
+- feat(chroot-distro): improve docker support
+- feat(chroot-distro): make some improvement so we can run docker
+
 ### v1.5.1
 
 - swap(chroot-distro): remove awk-jq and add a simple regex inside chroot-distro
