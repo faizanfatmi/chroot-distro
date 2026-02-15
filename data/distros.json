@@ -11,6 +11,16 @@
       "arm_url": "https://github.com/sabamdarif/chroot-distro/releases/download/alpine/alpine-arm-3.23.2.tar.xz"
     },
     {
+      "name": "archlinux",
+      "version": "2025.12.01",
+      "supported_arch": [
+        "aarch64",
+        "arm"
+      ],
+      "aarch64_url": "https://github.com/sabamdarif/chroot-distro/releases/download/archlinux/archlinux-aarch64-2025.12.01.tar.xz",
+      "arm_url": "https://github.com/sabamdarif/chroot-distro/releases/download/archlinux/archlinux-arm-2025.12.01.tar.xz"
+    },
+    {
       "name": "debian",
       "version": "trixie",
       "supported_arch": [
