@@ -28,75 +28,24 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.check-changes.outputs.matrix }}
-      should_build: ${{ steps.check-changes.outputs.should_build }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      should_build: ${{ steps.plan.outputs.should_build }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Determine distributions to build
-        id: check-changes
-        run: |
-          distros=""
-          should_build="false"
-
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            distros="${{ github.event.inputs.distributions }}"
-            should_build="true"
-          else
-             # Determine the base commit for diff
-            if [ "${{ github.event_name }}" == "pull_request" ]; then
-              base_sha="${{ github.event.pull_request.base.sha }}"
-              head_sha="${{ github.event.pull_request.head.sha }}"
-            else
-              base_sha="${{ github.event.before }}"
-              head_sha="${{ github.sha }}"
-              if [ -z "$base_sha" ] || [ "$base_sha" == "0000000000000000000000000000000000000000" ]; then
-                  base_sha=$(git log -1 --pretty=%P HEAD | awk '{print $1}')
-                  [ -z "$base_sha" ] && base_sha=$(git hash-object -t tree /dev/null)
-              fi
-            fi
-
-            echo "Diffing between $base_sha and $head_sha"
-            git diff-tree --no-commit-id --name-only -r "$base_sha" "$head_sha" > ./files_changed.txt
-
-            echo "Changed files:"
-            cat ./files_changed.txt
-
-            if grep -qE '^bootstrap-rootfs.sh$|^\.github/workflows/build-distro.yml$' ./files_changed.txt; then
-              echo "Core files changed. Building ALL distributions."
-              distros=$(ls -1 distro-build/*.sh | sed 's@distro-build/\(.*\)\.sh@\1@' | tr '\n' ' ')
-              should_build="true"
-            elif grep -q '^distro-build/.*\.sh$' ./files_changed.txt; then
-              echo "Specific distributions changed."
-              distros=$(grep '^distro-build/.*\.sh$' ./files_changed.txt | sed 's@distro-build/\(.*\)\.sh@\1@' | tr '\n' ' ')
-              should_build="true"
-            else
-              echo "No relevant changes found."
-            fi
-          fi
-
-          echo "should_build=$should_build" >> $GITHUB_OUTPUT
-
-          # Clean up formatting for JSON array
-          # 1. Replace newlines with spaces (already done partially above)
-          # 2. Trim leading/trailing spaces
-          # 3. Convert space-separated string to JSON array
-
-          # Ensure inputs are clean space-separated
-          clean_distros=$(echo "$distros" | xargs)
-
-          if [ -n "$clean_distros" ]; then
-            # Generate JSON array: ["distro1", "distro2"]
-            # jq -R -c 'split(" ") | map(select(length > 0))' reads the input string, splits by space, filters empties
-            json_array=$(echo "$clean_distros" | tr -d '\n' | jq -R -c 'split(" ") | map(select(length > 0))')
-            echo "Matrix JSON: $json_array"
-            echo "matrix=$json_array" >> $GITHUB_OUTPUT
-          else
-            echo "matrix=[]" >> $GITHUB_OUTPUT
-          fi
+      - name: Plan Build
+        id: plan
+        uses: ./.github/actions/plan-build
+        with:
+          event-name: ${{ github.event_name }}
+          distributions: ${{ github.event.inputs.distributions }}
+          pr-base-sha: ${{ github.event.pull_request.base.sha }}
+          pr-head-sha: ${{ github.event.pull_request.head.sha }}
+          before-sha: ${{ github.event.before }}
+          head-sha: ${{ github.sha }}
 
   build:
     needs: prepare
@@ -110,55 +59,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up build environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            wget curl jq xz-utils \
-            mmdebstrap \
-            qemu-user-static \
-            binfmt-support \
-            git sudo tar \
-            zstd
-
-          # Install missing keyrings for mmdebstrap
-          curl -L -o /tmp/mmdebstrap.deb http://ftp.us.debian.org/debian/pool/main/m/mmdebstrap/mmdebstrap_1.5.7-3_all.deb
-          sudo apt install -yq /tmp/mmdebstrap.deb || true
-          curl -L -o /tmp/keyring.deb http://ftp.us.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb
-          sudo apt install -yq /tmp/keyring.deb || true
-
-          # Trisquel keyring (can fail if not needed for current distro, but safe to try)
-          curl -L -o /tmp/trisquelkey.deb https://archive.trisquel.org/trisquel/pool/main/t/trisquel-keyring/trisquel-keyring_2023.02.07_all.deb
-          sudo apt install -yq /tmp/trisquelkey.deb || true
-
-          # Enable parallel compression
-          echo "XZ_OPT=-T0" >> $GITHUB_ENV
-
-          # Register binfmt for cross-arch builds
-          sudo update-binfmts --enable
-
-      - name: Build ${{ matrix.distro }}
-        run: |
-          set -e
-          export SKIP_ARCHS="${SKIP_ARCHS}"
-
-          if [ ! -f ./distro-build/${{ matrix.distro }}.sh ]; then
-             echo "Error: Recipe for ${{ matrix.distro }} not found!"
-             exit 1
-          fi
-
-          chmod +x bootstrap-rootfs.sh
-          # Build only the SINGLE distro assigned to this job
-          sudo -E ./bootstrap-rootfs.sh ${{ matrix.distro }}
-
-          # Verify output
-          if [ -d "rootfs" ] && [ "$(ls -A rootfs/ 2>/dev/null)" ]; then
-            echo "Build successful."
-            ls -la rootfs/
-          else
-            echo "Build failed: No output files."
-            exit 1
-          fi
+      - name: Build Rootfs
+        uses: ./.github/actions/build-rootfs
+        with:
+          distro: ${{ matrix.distro }}
+          skip-archs: ${{ env.SKIP_ARCHS }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -184,160 +89,10 @@ jobs:
           pattern: rootfs-*
           merge-multiple: true
 
-      - name: Prepare Rootfs Directory
-        run: |
-          mkdir -p rootfs
-          mv all_artifacts/*.tar.xz rootfs/
-          ls -R rootfs/
-
-      - name: Process updates and generate distros.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -e
-
-          # Function to get SHA256 hash of existing asset
-          get_existing_asset_hash() {
-            local tag="$1"
-            local asset_name="$2"
-            # Handle potential failure if release doesn't exist
-            local release_info=$(gh release view "$tag" --json assets 2>/dev/null || echo '{"assets": []}')
-            local existing_hash=$(echo "$release_info" | jq -r ".assets[] | select(.name == \"$asset_name\") | .digest" | sed 's/^sha256://')
-            if [ "$existing_hash" != "null" ] && [ -n "$existing_hash" ]; then
-                echo "$existing_hash"
-            else
-                echo "not_found"
-            fi
-          }
-
-          mkdir -p files_to_upload
-          declare -A DISTRO_DATA
-
-          for archive in rootfs/*.tar.xz; do
-            [ -f "$archive" ] || continue
-            filename=$(basename "$archive")
-            name_part="${filename%.tar.xz}"
-            version="${name_part##*-}"
-            distro_arch="${name_part%-*}"
-            arch="${distro_arch##*-}"
-            distro="${distro_arch%-*}"
-
-            echo "Processing $filename (Distro: $distro, Arch: $arch, Version: $version)"
-
-            # Calculate SHA256 of the new file
-            new_hash=$(sha256sum "$archive" | cut -d' ' -f1)
-            existing_hash=$(get_existing_asset_hash "$distro" "$filename")
-
-            echo "  New hash: $new_hash"
-            echo "  Existing hash: $existing_hash"
-
-            if [ "$new_hash" != "$existing_hash" ]; then
-              mkdir -p "files_to_upload/${distro}"
-              cp "$archive" "files_to_upload/${distro}/"
-              echo "  -> Content changed. Will upload."
-            else
-              echo "  -> No changes. Skipping upload."
-            fi
-
-            # Update DISTRO_DATA for distros.json logic
-            download_url="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${distro}/${filename}"
-            if [ -z "${DISTRO_DATA[$distro]}" ]; then
-              DISTRO_DATA["$distro"]="${version}|${arch}|"
-            else
-              prev_ver=$(echo "${DISTRO_DATA[$distro]}" | cut -d'|' -f1)
-              prev_archs=$(echo "${DISTRO_DATA[$distro]}" | cut -d'|' -f2)
-              DISTRO_DATA["$distro"]="${prev_ver}|${prev_archs} ${arch}|"
-            fi
-
-            [ "$arch" = "aarch64" ] && DISTRO_DATA["${distro}_aarch64_url"]="$download_url"
-            [ "$arch" = "arm" ] && DISTRO_DATA["${distro}_arm_url"]="$download_url"
-          done
-
-          echo "=== Generating distros.json ==="
-          json_content='{"distros": ['
-          first=true
-
-          # Sort output for stability
-          for distro in $(echo "${!DISTRO_DATA[@]}" | tr ' ' '\n' | grep -v '_url$' | sort -u); do
-             data="${DISTRO_DATA[$distro]}"
-             version=$(echo "$data" | cut -d'|' -f1)
-             archs=$(echo "$data" | cut -d'|' -f2)
-             aarch64_url="${DISTRO_DATA[${distro}_aarch64_url]:-}"
-             arm_url="${DISTRO_DATA[${distro}_arm_url]:-}"
-
-             # Convert space-delimited archs to unique sorted JSON array
-             arch_json=$(echo "$archs" | xargs -n1 | sort -u | sed 's/^/"/;s/$/"/' | tr '\n' ',' | sed 's/,$//')
-
-             if [ "$first" = "true" ]; then
-                first=false
-             else
-                json_content="$json_content,"
-             fi
-
-             # Append to JSON
-             json_content="$json_content {
-               \"name\": \"$distro\",
-               \"version\": \"$version\",
-               \"supported_arch\": [$arch_json],
-               \"aarch64_url\": \"$aarch64_url\",
-               \"arm_url\": \"$arm_url\"
-             }"
-          done
-          json_content="$json_content ]}"
-
-          # Validate and format JSON
-          echo "$json_content" | jq '.' > data/distros.json
-          echo "Generated distros.json:"
-          cat data/distros.json
-
-      - name: Commit distros.json
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add data/distros.json
-          if ! git diff --staged --quiet; then
-            git commit -m "chore: update distros.json [skip ci]"
-            git push origin main
-            echo "Committed distros.json"
-          else
-            echo "No changes to distros.json"
-          fi
-
-      - name: Create/Update Releases
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          for distro_dir in files_to_upload/*; do
-            [ -d "$distro_dir" ] || continue
-            distro_name=$(basename "$distro_dir")
-            echo "Updating release for $distro_name..."
-
-            # Create a simple release body
-            # Using heredoc for clean multi-line string
-            cat > release_notes.md <<EOF
-          ## $distro_name Rootfs Archives
-          Updated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-
-          ### Included Files:
-          $(ls -1 "$distro_dir" | sed 's/^/- /')
-          EOF
-
-            # Check if release exists
-            if gh release view "$distro_name" >/dev/null 2>&1; then
-              echo "Updating existing release $distro_name..."
-              gh release upload "$distro_name" "$distro_dir"/* --clobber
-              gh release edit "$distro_name" --notes-file release_notes.md
-            else
-              echo "Creating new release $distro_name..."
-              gh release create "$distro_name" "$distro_dir"/* --title "$distro_name Rootfs" --notes-file release_notes.md
-            fi
-
-            rm release_notes.md
-          done
-
-      - name: Clean up
-        if: always()
-        run: |
-          sudo rm -rf rootfs/
-          rm -rf files_to_upload/
-          rm -f distros.json
+      - name: Publish Distro
+        uses: ./.github/actions/publish-distro
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-owner: ${{ env.REPO_OWNER }}
+          repo-name: ${{ env.REPO_NAME }}
+          artifact-path: 'all_artifacts'
