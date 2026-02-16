@@ -2003,12 +2003,21 @@ command_login() {
 			esac
 		done
 	fi
-
 	###############################
 	# Build the command using set #
 	###############################
 
 	set -- "${INSTALLED_ROOTFS_DIR}/${distro_name}"
+
+	# Ensure home directory exists and has proper permissions for non-root users
+	# we shouldn't need this but i am still doing this just to be safe
+	if [ "$login_user" != "root" ]; then
+		if [ ! -d "${INSTALLED_ROOTFS_DIR}/${distro_name}${login_home}" ]; then
+			busybox mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}${login_home}"
+		fi
+		busybox chown -R "${login_uid}:${login_gid}" "${INSTALLED_ROOTFS_DIR}/${distro_name}${login_home}" 2>/dev/null || true
+		busybox chmod +x "${INSTALLED_ROOTFS_DIR}/${distro_name}${login_shell}" 2>/dev/null || true
+	fi
 
 	# Add env command and environment variables
 	set -- "$@" /usr/bin/env -i
@@ -2023,17 +2032,6 @@ command_login() {
 	set -- "$@" "USER=${login_user}"
 	set -- "$@" "PWD=${login_wd}"
 	set -- "$@" "TERM=xterm-256color"
-
-	##################################################################################
-	# use the `su -P` to fix the below error
-	# ################################################################################
-	# bash: cannot set terminal process group (4979): Inappropriate ioctl for device
-	# bash: no job control in this shell
-	# ################################################################################
-	# get it from here :- https://serverfault.com/a/1144764
-	##################################################################################
-
-	##################################################################################
 
 	configure_docker_runtime "$distro_name"
 	configure_flatpak_runtime "$distro_name"
@@ -2060,14 +2058,47 @@ command_login() {
 		fi
 	fi
 
-	set -- "$@" /bin/su -P - "$login_user" -s "$login_shell"
-
-	# Add command execution / login flag
-	# based on what it actually need
-	if [ -n "$exec_command" ]; then
-		set -- "$@" -c "cd '$login_wd' && $exec_command"
+	if [ "$login_user" = "root" ]; then
+		if [ -n "$exec_command" ]; then
+			set -- "$@" "$login_shell" -l -c "cd '$login_wd' && $exec_command"
+		else
+			set -- "$@" "$login_shell" -l -c "cd '$login_wd' && exec $login_shell -l"
+		fi
 	else
-		set -- "$@" -c "cd '$login_wd' && exec $login_shell -l"
+		# Execute command for user using setpriv (kinda same as proot's --change-id)
+		if [ -x "${INSTALLED_ROOTFS_DIR}/${distro_name}/usr/bin/setpriv" ]; then
+			if [ -n "$exec_command" ]; then
+				set -- "$@" /usr/bin/setpriv --reuid="$login_uid" --regid="$login_gid" --init-groups \
+					"$login_shell" -l -c "cd '$login_wd' && $exec_command"
+			else
+				set -- "$@" /usr/bin/setpriv --reuid="$login_uid" --regid="$login_gid" --init-groups \
+					"$login_shell" -l -c "cd '$login_wd' && exec $login_shell -l"
+			fi
+		# Fallback to setsid + su if setpriv not available
+		elif [ -x "${INSTALLED_ROOTFS_DIR}/${distro_name}/usr/bin/setsid" ]; then
+			set -- "$@" /usr/bin/setsid /bin/su - "$login_user" -s "$login_shell"
+			if [ -n "$exec_command" ]; then
+				set -- "$@" -c "cd '$login_wd' && $exec_command"
+			else
+				set -- "$@" -c "cd '$login_wd' && exec $login_shell -l"
+			fi
+		else
+			# Last resort: su with -P flag
+			##################################################################################
+			# use the `su -P` to fix the below error
+			# ################################################################################
+			# bash: cannot set terminal process group (4979): Inappropriate ioctl for device
+			# bash: no job control in this shell
+			# ################################################################################
+			# get it from here :- https://serverfault.com/a/1144764
+			##################################################################################
+			set -- "$@" /bin/su -P - "$login_user" -s "$login_shell"
+			if [ -n "$exec_command" ]; then
+				set -- "$@" -c "cd '$login_wd' && $exec_command"
+			else
+				set -- "$@" -c "cd '$login_wd' && exec $login_shell -l"
+			fi
+		fi
 	fi
 
 	# Increment session count before starting the session
