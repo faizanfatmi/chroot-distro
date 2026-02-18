@@ -1227,12 +1227,12 @@ command_install() {
 	# Enhanced network configuration with dynamic DNS
 	msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Configuring network and DNS...${RST}"
 
-	busybox mkdir -p "${INSTALLED_ROOTFS_DIR}/${distro_name}/run/resolvconf"
-	busybox cat <<-EOF >"${INSTALLED_ROOTFS_DIR}/${distro_name}/run/resolvconf/resolv.conf"
+	busybox rm -f "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/resolv.conf"
+
+	busybox cat <<-EOF >"${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/resolv.conf"
 		nameserver ${DEFAULT_PRIMARY_NAMESERVER}
 		nameserver ${DEFAULT_SECONDARY_NAMESERVER}
 	EOF
-	busybox ln -sf "${INSTALLED_ROOTFS_DIR}/${distro_name}/run/resolvconf/resolv.conf" "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/resolv.conf" 2>/dev/null || true
 
 	# Default /etc/hosts may be empty or incomplete.
 	msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Creating file '${INSTALLED_ROOTFS_DIR:?}/${distro_name:?}/etc/hosts'...${RST}"
