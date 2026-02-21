@@ -1,5 +1,26 @@
 # Changelog
 
+### v1.5.3
+
+- fix(ci/check_distro_versions): check latest version for void from /live/current/
+- fix(ci/publish-distro): run `git pull --rebase origin main` before push
+- feat(ci/build-distro): don't cancel old build on multiple commit
+- trisquel: bump to 12.0 (#23)
+- archlinux: bump to 2026.02.01 (#26)
+- rockylinux: bump to 10.1 (#24)
+- manjaro: bump to 20260216 (#25)
+- feat(ci): improve distro auto update
+- fix(ci/checkup-and-release): only run `Create Release` if the event_name == 'push'
+- fix(chroot-distro): fix network problems in isolated envoronments and get that working (#21)
+- feat(chroot-distro): adding bluetooth groops per default to user and add new --isolated to command_login (#19)
+- feat(chroot-distro): instead /bin/su -P use setpriv or setsid + su and /bin/su -P as a fallback
+- fix(chroot-distro): Adding other relevant android specific User and Group ID's (#14)
+- refactor(chroot-distro): busybox everywhere
+- fix(chroot-disttro): properly restore /data permission
+- docs: update README.md add a docker and flatpak guide
+- feat(ci): add new workflow to auto update the distro versions
+- fix(chroot-distro): Fix when allowing suid rules (#13)
+
 ### v1.5.2
 
 - feat(ci/checkup-and-release): don't create the chore: update files for release commit on relase instead it will do `git commit --amend --no-edit` and force push

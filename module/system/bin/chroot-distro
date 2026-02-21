@@ -39,7 +39,7 @@ else
 	RST=''
 fi
 
-PROGRAM_VERSION="1.5.2"
+PROGRAM_VERSION="1.5.3"
 
 REPO_OWNER="sabamdarif"
 
@@ -1770,8 +1770,8 @@ command_login() {
 		make_distro_isolated=true
 	elif [ "$make_distro_isolated" = "true" ] && [ ! -f "$session_file" ]; then
 		# If this the first session and we try to start isolated, we create the tracker file
-		busybox echo "" > "$isolated_tracker_file"
-	elif  [ "$make_distro_isolated" = "true" ]; then
+		busybox echo "" >"$isolated_tracker_file"
+	elif [ "$make_distro_isolated" = "true" ]; then
 		msg "${BRED}Error: try starting an isolated environment while non-isolated ones are running"
 		return 1
 	fi
