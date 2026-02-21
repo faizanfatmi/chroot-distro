@@ -82,10 +82,10 @@ fetch_rockylinux() {
 }
 
 fetch_void() {
-	# Void Linux live directory has YYYYMMDD/ directories.
+	# Void Linux: extract version from /live/current/ filenames.
 	local page
-	page=$(fetch_url "https://repo-default.voidlinux.org/live/") || return 0
-	echo "$page" | grep -oP '[0-9]{8}(?=/)' | sort -nr | head -1
+	page=$(fetch_url "https://repo-default.voidlinux.org/live/current/") || return 0
+	echo "$page" | grep -oP 'void-[^"]*ROOTFS-\K[0-9]{8}(?=\.tar)' | sort -nur | head -1
 }
 
 fetch_debian() {
