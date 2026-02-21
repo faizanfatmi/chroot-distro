@@ -68,11 +68,11 @@
     },
     {
       "name": "rocky",
-      "version": "10.0",
+      "version": "10.1",
       "supported_arch": [
         "aarch64"
       ],
-      "aarch64_url": "https://github.com/sabamdarif/chroot-distro/releases/download/rocky/rocky-aarch64-10.0.tar.xz",
+      "aarch64_url": "https://github.com/sabamdarif/chroot-distro/releases/download/rocky/rocky-aarch64-10.1.tar.xz",
       "arm_url": ""
     },
     {
