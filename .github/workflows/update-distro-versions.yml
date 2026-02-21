@@ -18,19 +18,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install dependencies
-        run: pip install requests
-
       - name: Check for updates
         id: set-matrix
         run: |
           # Generate JSON output of updates
-          python3 .github/workflows/scripts/check_distro_versions.py --check > updates.json
+          bash .github/workflows/scripts/check_distro_versions.sh --check > updates.json
 
           # Debug output
           cat updates.json
@@ -55,22 +47,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install dependencies
-        run: pip install requests
 
       - name: Apply update
         run: |
-          python3 .github/workflows/scripts/check_distro_versions.py --update "${{ matrix.update.name }}" "${{ matrix.update.new }}"
+          bash .github/workflows/scripts/check_distro_versions.sh --update "${{ matrix.update.name }}" "${{ matrix.update.new }}" "${{ matrix.update.new_codename }}"
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
           commit-message: "${{ matrix.update.name }}: bump to ${{ matrix.update.new }}"
           title: "${{ matrix.update.name }}: bump to ${{ matrix.update.new }}"
           body: |

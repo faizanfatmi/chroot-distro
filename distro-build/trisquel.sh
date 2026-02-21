@@ -1,8 +1,9 @@
 # Put only current stable version here!
-dist_version="aramo"
+dist_version="11.0"
+dist_codename="aramo"
 
 bootstrap_distribution() {
-	sudo rm -f "${ROOTFS_DIR}"/trisquel-"${dist_version}"-*.tar.xz
+	sudo rm -f "${ROOTFS_DIR}"/trisquel-*-"${dist_version}".tar.xz
 
 	for arch in i386 arm64 armhf amd64; do
 		if should_skip_arch "$arch"; then
@@ -17,12 +18,12 @@ bootstrap_distribution() {
 			--components="main" \
 			--include="ca-certificates,locales,trisquel-keyring,software-properties-common,passwd" \
 			--format=directory \
-			"${dist_version}" \
+			"${dist_codename}" \
 			"${WORKDIR}/trisquel-$(translate_arch "$arch")" \
-			"deb http://archive.trisquel.org/trisquel ${dist_version} main" \
-			"deb http://archive.trisquel.org/trisquel ${dist_version}-updates main" \
-			"deb http://archive.trisquel.org/trisquel ${dist_version}-security main" \
-			"deb http://archive.trisquel.org/trisquel ${dist_version}-backports main"
+			"deb http://archive.trisquel.org/trisquel ${dist_codename} main" \
+			"deb http://archive.trisquel.org/trisquel ${dist_codename}-updates main" \
+			"deb http://archive.trisquel.org/trisquel ${dist_codename}-security main" \
+			"deb http://archive.trisquel.org/trisquel ${dist_codename}-backports main"
 		archive_rootfs "${ROOTFS_DIR}/trisquel-$(translate_arch "$arch")-${dist_version}.tar.xz" \
 			"trisquel-$(translate_arch "$arch")"
 	done
