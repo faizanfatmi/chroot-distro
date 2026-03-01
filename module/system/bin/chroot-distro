@@ -1100,7 +1100,6 @@ command_install() {
 			msg "${BRED}Error: distribution '${YELLOW}${distro_name}${BRED}' is already installed.${RST}"
 			msg
 			msg "${CYAN}Log in:     ${GREEN}${PROGRAM_NAME} login ${distro_name}${RST}"
-			msg "${CYAN}Reinstall:  ${GREEN}${PROGRAM_NAME} reset ${distro_name}${RST}"
 			msg "${CYAN}Uninstall:  ${GREEN}${PROGRAM_NAME} remove ${distro_name}${RST}"
 			msg
 			return 1
@@ -1693,15 +1692,39 @@ command_login() {
 		return 1
 	fi
 
-	# Check if distribution is installed
 	if [ ! -d "${INSTALLED_ROOTFS_DIR}/${distro_name}" ]; then
-		msg
-		msg "${BRED}Error: distribution '${YELLOW}${distro_name}${BRED}' is not installed.${RST}"
-		msg
-		return 1
+		init_distros_data 2>/dev/null
+		if [ -f "$DISTROS_JSON" ]; then
+			SUPPORTED_DISTRIBUTIONS=$(json_get_distro_names | busybox tr '\n' ' ')
+		fi
+
+		distro_found=false
+		for supported_distro in $SUPPORTED_DISTRIBUTIONS; do
+			if [ "$supported_distro" = "$distro_name" ]; then
+				distro_found=true
+				break
+			fi
+		done
+
+		if [ "$distro_found" = "true" ]; then
+			msg "${YELLOW}${distro_name}${RST} isn't installed"
+			busybox printf "${CYAN}want to install it (y/n)? ${RST}"
+			read -r install_choice
+			if [ "$install_choice" = "y" ] || [ "$install_choice" = "Y" ]; then
+				command_install "$distro_name" || return 1
+			else
+				return 1
+			fi
+		else
+			msg
+			msg "${BRED}Error: unknown distribution '${YELLOW}${distro_name}${BRED}'.${RST}"
+			msg
+			msg "${CYAN}Run '${GREEN}${PROGRAM_NAME} list${CYAN}' to see available distributions.${RST}"
+			msg
+			return 1
+		fi
 	fi
 
-	# It's hard to work without /etc/passwd.
 	if [ ! -e "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc/passwd" ]; then
 		msg "${BRED}Error: the selected distribution doesn't have /etc/passwd.${RST}"
 		return 1
