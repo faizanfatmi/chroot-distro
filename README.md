@@ -245,7 +245,7 @@ chmod +x $PREFIX/bin/chroot-distro
 
 ---
 
-## 📸 Screenshots
+## Screenshots
 
 <div align="center">
 
@@ -257,13 +257,13 @@ chmod +x $PREFIX/bin/chroot-distro
 
 ---
 
-## 🔍 Kernel Compatibility Check
+## Kernel Compatibility Check
 
 Before attempting to run Docker/Flatpak, it is highly recommended to check if your kernel supports the necessary configurations.
 
 ### How to Check
 
-1.  **Install Termux** (if not already installed).
+1.  **Install Termux** (if not already).
 2.  **Run the Compatibility Check Script**:
 
     The following script checks for kernel configurations required by Docker
