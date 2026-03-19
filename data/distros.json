@@ -22,13 +22,13 @@
     },
     {
       "name": "debian",
-      "version": "13.3",
+      "version": "13.4",
       "supported_arch": [
         "aarch64",
         "arm"
       ],
-      "aarch64_url": "https://github.com/sabamdarif/chroot-distro/releases/download/debian/debian-aarch64-13.3.tar.xz",
-      "arm_url": "https://github.com/sabamdarif/chroot-distro/releases/download/debian/debian-arm-13.3.tar.xz"
+      "aarch64_url": "https://github.com/sabamdarif/chroot-distro/releases/download/debian/debian-aarch64-13.4.tar.xz",
+      "arm_url": "https://github.com/sabamdarif/chroot-distro/releases/download/debian/debian-arm-13.4.tar.xz"
     },
     {
       "name": "fedora",
