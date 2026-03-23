@@ -2545,6 +2545,32 @@ command_remove() {
 	msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Unmounting system points...${RST}"
 	command_unmount "${distro_name}"
 
+	# Abort removal if any bind mounts (e.g., /sdcard, /storage, /data)
+	# are still active under the rootfs, otherwise rm -rf was following
+	# them and destroying host filesystem contents.
+	# Issue #5 (https://github.com/sabamdarif/chroot-distro/issues/5)
+	remaining_mounts=$(busybox awk -v rootfs="${INSTALLED_ROOTFS_DIR}/${distro_name}" '
+		$2 ~ "^"rootfs"/" || $2 == rootfs { print $2 }
+	' /proc/mounts 2>/dev/null)
+
+	if [ -n "$remaining_mounts" ]; then
+		msg "${BRED}Error: Cannot safely remove '${YELLOW}${distro_name}${BRED}' - mount points still active!${RST}"
+		msg "${YELLOW}The following mount points could not be unmounted:${RST}"
+		echo "$remaining_mounts" | while IFS= read -r mp; do
+			msg "  ${CYAN}${mp}${RST}"
+		done
+		msg ""
+		msg "${YELLOW}To avoid data loss, removal has been aborted.${RST}"
+		msg "${CYAN}Please close any programs running in the distribution, then try again.${RST}"
+		msg "${CYAN}You can try: ${GREEN}${PROGRAM_NAME} unmount ${distro_name}${RST}"
+		return 1
+	fi
+
+	# Remove symlinks that could point outside rootfs before rm -rf
+	# This prevents rm from following symlinks to delete host files
+	msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Removing symlinks for safe deletion...${RST}"
+	busybox find "${INSTALLED_ROOTFS_DIR}/${distro_name}" -type l -exec "$BUSYBOXPATH" unlink {} \; 2>/dev/null || true
+
 	# Attempt to restore permissions so directory can be removed without issues.
 	# Use busybox chmod if available for better compatibility
 	msg "${BLUE}[${GREEN}*${BLUE}] ${CYAN}Restoring permissions...${RST}"
@@ -2824,6 +2850,9 @@ command_unmount_system_points_force() {
 			busybox umount "$mount_point" 2>/dev/null ||
 				busybox umount -l "$mount_point" 2>/dev/null || true
 		done
+
+	# Wait briefly for unmounts to complete
+	busybox sleep 2
 }
 
 command_unmount_help() {
