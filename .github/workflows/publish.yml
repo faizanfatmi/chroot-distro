@@ -153,27 +153,37 @@ jobs:
             - name: Publish to PyPI
               uses: pypa/gh-action-pypi-publish@release/v1
 
-    # ── Create GitHub Release with signed artifacts ──────────────────────
+    # ── Create GitHub Release ────────────────────────────────────────────
     github-release:
-        needs: [prepare, build, publish-pypi]
+        needs: [prepare, publish-pypi]
         runs-on: ubuntu-latest
         permissions:
             contents: write
-            id-token: write
 
         steps:
-            - name: Download build artifacts
-              uses: actions/download-artifact@v4
+            - name: Checkout repository
+              uses: actions/checkout@v4
               with:
-                  name: python-package-distributions
-                  path: dist/
+                  ref: ${{ needs.prepare.outputs.tag }}
+                  fetch-depth: 0
 
-            - name: Sign with Sigstore
-              uses: sigstore/gh-action-sigstore-python@v3.3.0
-              with:
-                  inputs: >-
-                      ./dist/*.tar.gz
-                      ./dist/*.whl
+            - name: Generate Changelog
+              run: |
+                  CURRENT_TAG="${{ needs.prepare.outputs.tag }}"
+                  # Find the previous tag before this one
+                  PREV_TAG=$(git describe --tags --abbrev=0 "${CURRENT_TAG}^" 2>/dev/null || echo "")
+
+                  echo "## What's Changed" > release_notes.md
+                  echo "" >> release_notes.md
+
+                  if [ -z "$PREV_TAG" ]; then
+                    echo "First release tag: $CURRENT_TAG"
+                    git log --no-merges --pretty=format:"- %s (%h)" "${CURRENT_TAG}" | grep -vE "^- (release:|chore: bump version to)" >> release_notes.md
+                  else
+                    echo "Generating changes between $PREV_TAG and $CURRENT_TAG"
+                    git log --no-merges --pretty=format:"- %s (%h)" "${PREV_TAG}..${CURRENT_TAG}" | grep -vE "^- (release:|chore: bump version to)" >> release_notes.md
+                  fi
+                  echo "" >> release_notes.md
 
             - name: Create GitHub Release
               env:
@@ -185,7 +195,6 @@ jobs:
                   fi
 
                   gh release create "${{ needs.prepare.outputs.tag }}" \
-                    dist/* \
                     --repo "${{ github.repository }}" \
-                    --generate-notes \
+                    --notes-file release_notes.md \
                     $PRERELEASE_FLAG
