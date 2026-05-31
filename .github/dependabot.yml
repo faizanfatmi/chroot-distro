@@ -9,9 +9,6 @@ updates:
       commit-message:
           prefix: "deps"
           include: "scope"
-      labels:
-          - "dependencies"
-          - "python"
       open-pull-requests-limit: 10
 
     # GitHub Actions versions
@@ -23,7 +20,4 @@ updates:
       commit-message:
           prefix: "ci"
           include: "scope"
-      labels:
-          - "dependencies"
-          - "ci"
       open-pull-requests-limit: 10
