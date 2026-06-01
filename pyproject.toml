@@ -124,3 +124,8 @@ module = [
 ]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
+
+[dependency-groups]
+dev = [
+    "mypy>=1.10",
+]
