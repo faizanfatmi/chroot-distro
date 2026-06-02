@@ -24,7 +24,11 @@ _LONG_TO_SHORT = {
 }
 
 ISOLATION_MODE_NAMESPACE = "namespace"
+ISOLATION_MODE_MOUNT = "mount"
 ISOLATION_MODE_HOST = "host"
+
+MOUNT_ONLY_FLAGS = ["--mount"]
+_FULL_NAMESPACE_FLAGS = frozenset({"--pid", "--uts", "--ipc"})
 
 
 class NamespaceError(ChrootDistroError):
@@ -346,10 +350,35 @@ def _create_holder(container_name: str, flags: list[str]) -> NamespaceHolder:
     )
 
 
+def is_full_namespace_holder(flags: list[str]) -> bool:
+    """Return True when holder flags include PID/UTS/IPC (``--isolated`` session)."""
+    return bool(_FULL_NAMESPACE_FLAGS.intersection(flags))
+
+
+def acquire_mount_holder(container_name: str) -> NamespaceHolder:
+    """Reuse or create a mount-only namespace holder (normal login, nested bwrap)."""
+    existing = get_live_holder(container_name)
+    if existing is not None:
+        flags = _read_holder_flags(container_name)
+        if is_full_namespace_holder(flags):
+            raise NamespaceError(
+                f"Container '{container_name}' has a full isolated namespace holder. "
+                f"Run '{PROGRAM_NAME} unmount {container_name}' before a normal login."
+            )
+        return existing
+    return _create_holder(container_name, MOUNT_ONLY_FLAGS)
+
+
 def acquire_holder(container_name: str) -> NamespaceHolder:
     """Reuse or create a namespace holder for the container."""
     existing = get_live_holder(container_name)
     if existing is not None:
+        flags = _read_holder_flags(container_name)
+        if flags == MOUNT_ONLY_FLAGS:
+            raise NamespaceError(
+                f"Container '{container_name}' has a mount-namespace login session. "
+                f"Run '{PROGRAM_NAME} unmount {container_name}' before using --isolated."
+            )
         return existing
     flags = probe_unshare_flags()
     return _create_holder(container_name, flags)
@@ -383,27 +412,62 @@ def make_mount_private(holder: NamespaceHolder) -> bool:
     return True
 
 
+def make_mount_slave(holder: NamespaceHolder) -> bool:
+    """Set mount propagation to rslave on / in the holder's mount namespace.
+
+    rprivate breaks nested bubblewrap (``Failed to make / slave``); rslave keeps
+    isolation from the host while allowing nested sandboxes inside the guest.
+    """
+    try:
+        result = holder.run(["mount", "--make-rslave", "/"], capture_output=True, text=True)
+    except OSError:
+        return False
+    if result.returncode != 0:
+        log.debug("mount --make-rslave / failed: %s", (result.stderr or "").strip())
+        return False
+    return True
+
+
 def check_isolation_conflicts(
     container_name: str,
     *,
-    use_namespaces: bool,
+    want_full_namespace: bool,
+    want_mount_namespace: bool,
     host_mounts_exist: bool,
 ) -> None:
-    """Raise NamespaceError when isolated and non-isolated modes would mix."""
+    """Raise NamespaceError when login modes would mix."""
     mode = read_isolation_mode(container_name)
     live_holder = get_live_holder(container_name)
 
-    if use_namespaces:
+    if want_full_namespace:
         if mode == ISOLATION_MODE_HOST and host_mounts_exist:
             raise NamespaceError(
                 f"Container '{container_name}' has active mounts in the host mount namespace. "
                 f"Run '{PROGRAM_NAME} unmount {container_name}' before using --isolated."
             )
+        if mode == ISOLATION_MODE_MOUNT:
+            raise NamespaceError(
+                f"Container '{container_name}' has an active mount-namespace login session. "
+                f"Run '{PROGRAM_NAME} unmount {container_name}' before using --isolated."
+            )
         if mode == ISOLATION_MODE_HOST and not host_mounts_exist:
             clear_isolation_mode(container_name)
-    else:
-        if live_holder is not None or mode == ISOLATION_MODE_NAMESPACE:
+    elif want_mount_namespace:
+        if mode == ISOLATION_MODE_NAMESPACE:
             raise NamespaceError(
                 f"Container '{container_name}' is in isolated namespace mode. "
                 f"Use --isolated or run '{PROGRAM_NAME} unmount {container_name}' first."
             )
+        if live_holder is not None and is_full_namespace_holder(_read_holder_flags(container_name)):
+            raise NamespaceError(
+                f"Container '{container_name}' has a full isolated namespace holder. "
+                f"Run '{PROGRAM_NAME} unmount {container_name}' first."
+            )
+    elif live_holder is not None or mode in (
+        ISOLATION_MODE_NAMESPACE,
+        ISOLATION_MODE_MOUNT,
+    ):
+        raise NamespaceError(
+            f"Container '{container_name}' has an active namespace session. "
+            f"Run '{PROGRAM_NAME} unmount {container_name}' before --minimal login."
+        )

@@ -495,14 +495,19 @@ def _command_login_inner(container_name: str, args) -> None:
         dist_type=dist_type,
     )
 
-    use_namespaces = isolated and not minimal
+    want_full_namespace = isolated and not minimal
+    want_mount_namespace = not minimal and not isolated
     holder = None
 
     try:
-        host_mounts_exist = bool(mount_manager.get_active_mounts(rootfs))
+        live_holder = namespace.get_live_holder(container_name)
+        host_mounts_exist = bool(
+            mount_manager.get_active_mounts(rootfs, holder=live_holder)
+        )
         namespace.check_isolation_conflicts(
             container_name,
-            use_namespaces=use_namespaces,
+            want_full_namespace=want_full_namespace,
+            want_mount_namespace=want_mount_namespace,
             host_mounts_exist=host_mounts_exist,
         )
     except NamespaceError as exc:
@@ -512,12 +517,22 @@ def _command_login_inner(container_name: str, args) -> None:
     # 2. Increment session counter and mount if first session
     sess_count = session.increment(container_name)
     if sess_count == 1:
-        if use_namespaces:
+        if want_full_namespace:
             try:
                 holder = namespace.acquire_holder(container_name)
                 namespace.write_isolation_mode(container_name, namespace.ISOLATION_MODE_NAMESPACE)
-                if not namespace.make_mount_private(holder):
-                    warn("Failed to set mount propagation to rprivate in isolated namespace.")
+                if not namespace.make_mount_slave(holder):
+                    warn("Failed to set mount propagation to rslave in isolated namespace.")
+            except NamespaceError as exc:
+                session.decrement(container_name)
+                crit_error(str(exc))
+                sys.exit(1)
+        elif want_mount_namespace:
+            try:
+                holder = namespace.acquire_mount_holder(container_name)
+                namespace.write_isolation_mode(container_name, namespace.ISOLATION_MODE_MOUNT)
+                if not namespace.make_mount_slave(holder):
+                    warn("Failed to set mount propagation to rslave in mount namespace.")
             except NamespaceError as exc:
                 session.decrement(container_name)
                 crit_error(str(exc))
@@ -530,6 +545,13 @@ def _command_login_inner(container_name: str, args) -> None:
         # Pre-clean stale mounts if any
         with contextlib.suppress(Exception):
             mount_manager.unmount_all(rootfs, holder=holder)
+        if not minimal and not mount_manager.prepare_rootfs_for_nested_namespaces(
+            rootfs, holder=holder
+        ):
+            warn(
+                "Could not prepare rootfs for nested sandbox tools "
+                "(unshare/bwrap inside the guest may fail)."
+            )
         # Phase 1: bind mounts
         for src, dst in resolved_binds:
             try:
@@ -547,7 +569,7 @@ def _command_login_inner(container_name: str, args) -> None:
         try:
             specials = bindings.get_special_mounts(
                 rootfs,
-                isolated=use_namespaces,
+                isolated=want_full_namespace,
                 enable_usb=not minimal,
                 enable_binfmt=not minimal,
                 enable_docker_cgroup=not minimal,
@@ -563,7 +585,7 @@ def _command_login_inner(container_name: str, args) -> None:
             session.decrement(container_name)
             crit_error(f"Failed to apply special mounts: {e}")
             sys.exit(1)
-    elif use_namespaces:
+    elif want_full_namespace or want_mount_namespace:
         holder = namespace.get_live_holder(container_name)
         if holder is None:
             session.decrement(container_name)

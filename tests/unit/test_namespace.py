@@ -72,7 +72,8 @@ def test_check_isolation_conflicts_namespace_mode_without_flag():
     ):
         ns.check_isolation_conflicts(
             "alpine",
-            use_namespaces=False,
+            want_full_namespace=False,
+            want_mount_namespace=True,
             host_mounts_exist=False,
         )
 
@@ -85,7 +86,8 @@ def test_check_isolation_conflicts_host_mounts_with_isolated():
     ):
         ns.check_isolation_conflicts(
             "alpine",
-            use_namespaces=True,
+            want_full_namespace=True,
+            want_mount_namespace=False,
             host_mounts_exist=True,
         )
 
@@ -101,10 +103,19 @@ def test_get_live_holder(*_mocks):
     assert holder.run_argv(["echo", "hi"])[0] == "nsenter"
 
 
+@patch("chroot_distro.helpers.namespace._create_holder")
+def test_acquire_mount_holder_creates_mount_only(mock_create):
+    mock_create.return_value = MagicMock(pid=50)
+    holder = ns.acquire_mount_holder("alpine")
+    assert holder.pid == 50
+    mock_create.assert_called_once_with("alpine", ns.MOUNT_ONLY_FLAGS)
+
+
+@patch("chroot_distro.helpers.namespace._read_holder_flags", return_value=["--mount", "--pid"])
 @patch("chroot_distro.helpers.namespace.get_live_holder")
 @patch("chroot_distro.helpers.namespace._create_holder")
 @patch("chroot_distro.helpers.namespace.probe_unshare_flags", return_value=["--mount"])
-def test_acquire_holder_reuses_existing(mock_probe, mock_create, mock_get):
+def test_acquire_holder_reuses_existing(mock_probe, mock_create, mock_get, _mock_flags):
     existing = MagicMock(pid=99)
     mock_get.return_value = existing
     assert ns.acquire_holder("alpine") is existing

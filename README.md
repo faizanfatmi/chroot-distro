@@ -989,7 +989,11 @@ cp src/chroot_distro/completions/chroot-distro.fish \
   guest.
 - **Namespaces**: `--isolated` provides mount/PID/UTS/IPC isolation via
   `unshare`/`nsenter`, but there is no network namespace and no parity with
-  Docker or Podman.
+  Docker or Podman. Login bind-mounts the rootfs on itself and sets mount
+  propagation so nested `unshare` / bubblewrap inside the guest can work when
+  the host kernel allows it. Normal login (without `--isolated` or `--minimal`)
+  also uses a **mount-only** namespace holder so bubblewrap can run inside the
+  guest. **bubblewrap** is not bundled by chroot-distro.
 - **Bind mount hygiene**: crashed sessions or orphan processes can leave
   mounts busy; `unmount` and lazy unmount mitigate this but orphaned
   processes should be cleaned up.

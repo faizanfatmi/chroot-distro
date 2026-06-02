@@ -87,6 +87,36 @@ def _run_mount_cmd(cmd: list[str], holder: NamespaceHolder | None) -> subprocess
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 
+def prepare_rootfs_for_nested_namespaces(
+    rootfs: str,
+    holder: NamespaceHolder | None = None,
+) -> bool:
+    """Bind-mount rootfs on itself and set propagation for nested unshare/bwrap.
+
+    Without this, tools like ``unshare --mount`` or bubblewrap inside the guest
+    often fail with *cannot change root filesystem propagation* or
+    *Failed to make / slave*.
+    """
+    rootfs_abs = os.path.realpath(rootfs)
+    if not os.path.isdir(rootfs_abs):
+        return False
+    try:
+        if not is_mounted(rootfs_abs, holder=holder):
+            safe_mount(rootfs_abs, rootfs_abs, holder=holder)
+    except MountError as exc:
+        log.debug("rootfs bind-mount for nesting failed: %s", exc)
+        return False
+
+    last_stderr = ""
+    for propagation_flag in ("--make-rslave", "--make-rprivate"):
+        result = _run_mount_cmd(["mount", propagation_flag, rootfs_abs], holder)
+        if result.returncode == 0:
+            return True
+        last_stderr = (result.stderr or "").strip()
+    log.debug("rootfs propagation setup failed on %s: %s", rootfs_abs, last_stderr)
+    return False
+
+
 def safe_mount(source: str, target: str, holder: NamespaceHolder | None = None) -> None:
     """Safely mount source to target using bind mount.
 
