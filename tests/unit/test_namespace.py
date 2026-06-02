@@ -13,14 +13,56 @@ def test_long_flags_to_nsenter_short():
 
 
 def test_holder_unshare_argv_adds_fork_with_pid():
-    argv = ns._holder_unshare_argv("unshare", ["--pid", "--mount"])
-    assert argv == ["unshare", "--fork", "--pid", "--mount", "sleep", "infinity"]
+    argv = ns._holder_unshare_argv("unshare", ["--pid", "--mount"], "/tmp/holder.spawn.pid")
+    assert argv[:4] == ["unshare", "--fork", "--pid", "--mount"]
+    assert argv[4] in ("sh", "bash")
+    assert argv[5] == "-c"
+    assert "holder.spawn.pid" in argv[6]
+    assert "exec sleep infinity" in argv[6]
+    assert "exec while" not in argv[6]
+
+
+@patch("chroot_distro.helpers.namespace.IS_TERMUX", True)
+@patch("chroot_distro.helpers.namespace.TERMUX_PREFIX", "/data/data/com.termux/files/usr")
+def test_holder_inner_script_termux_no_exec_while():
+    with patch("os.path.isfile", return_value=True):
+        script = ns._holder_inner_script("/tmp/spawn.pid")
+    assert "exec while" not in script
+    assert "while true; do" in script
+    assert "86400" in script
 
 
 def test_holder_unshare_argv_no_duplicate_fork():
-    argv = ns._holder_unshare_argv("unshare", ["--fork", "--mount"])
+    argv = ns._holder_unshare_argv("unshare", ["--fork", "--mount"], "/tmp/spawn.pid")
     assert argv.count("--fork") == 1
-    assert argv[-2:] == ["sleep", "infinity"]
+    assert "sh" in argv and "-c" in argv
+
+
+def test_read_spawn_holder_pid(tmp_path):
+    spawn = tmp_path / "spawn.pid"
+    spawn.write_text("4242")
+    with patch.object(ns, "_pid_alive", return_value=True):
+        assert ns._read_spawn_holder_pid(str(spawn)) == 4242
+
+
+def test_wait_for_holder_pid_uses_spawn_file(tmp_path):
+    spawn = tmp_path / "spawn.pid"
+    spawn.write_text("99")
+    proc = MagicMock()
+    proc.pid = 1
+    proc.poll.return_value = None
+    with (
+        patch.object(ns, "_pid_alive", return_value=True),
+        patch.object(ns, "_is_sleep_infinity_holder", return_value=True),
+    ):
+        pid = ns._wait_for_holder_pid(
+            spawn_pid_file=str(spawn),
+            before_sleep=set(),
+            launcher_pid=1,
+            proc=proc,
+            max_attempts=1,
+        )
+    assert pid == 99
 
 
 def test_pick_new_holder_pid():
@@ -45,7 +87,15 @@ def test_long_flags_to_nsenter_long():
 
 
 @patch("chroot_distro.helpers.namespace.subprocess.run")
-def test_probe_unshare_flags_requires_mount(mock_run):
+def test_mount_namespace_available(mock_run):
+    mock_run.return_value = MagicMock(returncode=0)
+    assert ns.mount_namespace_available() is True
+    mock_run.assert_called_once()
+
+
+@patch("chroot_distro.helpers.namespace.mount_namespace_available", return_value=True)
+@patch("chroot_distro.helpers.namespace.subprocess.run")
+def test_probe_unshare_flags_requires_mount(mock_run, _mount_ok):
     def side_effect(cmd, **kwargs):
         flag = cmd[1] if len(cmd) > 1 else ""
         rc = 0 if flag in ("--mount", "--pid") else 1
@@ -57,9 +107,8 @@ def test_probe_unshare_flags_requires_mount(mock_run):
     assert "--pid" in flags
 
 
-@patch("chroot_distro.helpers.namespace.subprocess.run")
-def test_probe_unshare_flags_fails_without_mount(mock_run):
-    mock_run.return_value = MagicMock(returncode=1)
+@patch("chroot_distro.helpers.namespace.mount_namespace_available", return_value=False)
+def test_probe_unshare_flags_fails_without_mount(_mount_ok):
     with pytest.raises(ns.NamespaceError, match="Mount namespace"):
         ns.probe_unshare_flags()
 

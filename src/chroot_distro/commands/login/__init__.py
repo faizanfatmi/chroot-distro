@@ -495,9 +495,34 @@ def _command_login_inner(container_name: str, args) -> None:
         dist_type=dist_type,
     )
 
-    want_full_namespace = isolated and not minimal
-    want_mount_namespace = not minimal and not isolated
+    mount_ns_ok = namespace.mount_namespace_available()
+    want_full_namespace = isolated and not minimal and mount_ns_ok
+    # Mount-only holder enables nested bwrap on desktop Linux; skip on Termux (fragile
+    # under Android sh/su and not required for typical Termux chroot usage).
+    want_mount_namespace = (
+        not minimal and not isolated and mount_ns_ok and not IS_TERMUX
+    )
     holder = None
+
+    if isolated and not minimal and not mount_ns_ok:
+        crit_error(
+            "Mount namespaces are not available (unshare --mount failed). "
+            "On Termux, run as root (e.g. tsu or su -c 'chroot-distro login …')."
+        )
+        sys.exit(1)
+
+    if IS_TERMUX and not minimal and not isolated:
+        if not mount_ns_ok:
+            warn(
+                "Mount namespaces are not available; login proceeds without a mount-namespace "
+                "holder. On Termux use real root: tsu, or su -c 'chroot-distro login …' "
+                "(the Termux sudo package is not GNU sudo)."
+            )
+    elif not minimal and not mount_ns_ok and not isolated:
+        warn(
+            "Mount namespaces are not available; login proceeds without a mount-namespace "
+            "holder. Nested unshare/bwrap inside the guest may not work."
+        )
 
     try:
         live_holder = namespace.get_live_holder(container_name)

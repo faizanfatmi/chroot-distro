@@ -84,7 +84,16 @@ def elevate_or_die(use_sudo: bool = False) -> None:
 
     # Construct the final command line
     if tool_cmd[-1] == "-c":
-        cmd_str = shlex.join(reexec_argv)
+        if IS_TERMUX:
+            # su often drops Termux env vars; keep paths so containers and $PREFIX stay visible.
+            exports = [
+                f"export {key}={shlex.quote(val)}"
+                for key, val in sorted(os.environ.items())
+                if key.startswith("TERMUX") or key in ("PATH", "HOME")
+            ]
+            cmd_str = "; ".join([*exports, shlex.join(reexec_argv)]) if exports else shlex.join(reexec_argv)
+        else:
+            cmd_str = shlex.join(reexec_argv)
         full_argv = [*tool_cmd, cmd_str]
     else:
         full_argv = [*tool_cmd, *reexec_argv]

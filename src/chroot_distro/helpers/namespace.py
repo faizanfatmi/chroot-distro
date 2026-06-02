@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import shlex
 import signal
 import subprocess
 import time
@@ -49,6 +50,10 @@ def _holder_flags_file(container_name: str) -> str:
     return os.path.join(_container_data_dir(container_name), "holder.flags")
 
 
+def _holder_spawn_pid_file(container_name: str) -> str:
+    return os.path.join(_container_data_dir(container_name), "holder.spawn.pid")
+
+
 def _isolation_mode_file(container_name: str) -> str:
     return os.path.join(_container_data_dir(container_name), "isolation.mode")
 
@@ -91,8 +96,25 @@ def long_flags_to_nsenter(flags: list[str], *, use_long: bool) -> list[str]:
     return [_LONG_TO_SHORT[f] for f in flags if f in _LONG_TO_SHORT]
 
 
+def mount_namespace_available() -> bool:
+    """Return True if ``unshare --mount`` succeeds (requires root on Termux)."""
+    unshare = _resolve_unshare()
+    try:
+        result = subprocess.run(
+            [unshare, "--mount", "true"],
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
 def probe_unshare_flags() -> list[str]:
     """Return supported unshare flags; mount namespace is required."""
+    if not mount_namespace_available():
+        raise NamespaceError("Mount namespace not supported by this kernel (unshare --mount failed).")
     unshare = _resolve_unshare()
     supported: list[str] = []
     for flag in _PROBE_FLAGS:
@@ -154,7 +176,7 @@ def _read_holder_pid(container_name: str) -> int | None:
         return None
     if not _pid_alive(pid):
         return None
-    if not _is_sleep_infinity_holder(pid):
+    if not _is_valid_holder_pid(pid):
         return None
     return pid
 
@@ -172,7 +194,11 @@ def _read_holder_flags(container_name: str) -> list[str]:
 
 
 def _remove_holder_state(container_name: str) -> None:
-    for path in (_holder_pid_file(container_name), _holder_flags_file(container_name)):
+    for path in (
+        _holder_pid_file(container_name),
+        _holder_flags_file(container_name),
+        _holder_spawn_pid_file(container_name),
+    ):
         with contextlib.suppress(OSError):
             os.remove(path)
 
@@ -194,6 +220,52 @@ def _is_sleep_infinity_holder(pid: int) -> bool:
     except OSError:
         return False
     return "infinity" in cmdline.split()
+
+
+def _resolve_holder_shell() -> str:
+    """Shell used to start the holder (Termux ``sudo`` often drops ``$PREFIX`` from PATH)."""
+    if IS_TERMUX:
+        for candidate in (
+            os.path.join(TERMUX_PREFIX, "bin", "bash"),
+            os.path.join(TERMUX_PREFIX, "bin", "sh"),
+        ):
+            if os.path.isfile(candidate):
+                return candidate
+    return "sh"
+
+
+def _holder_inner_script(spawn_pid_file: str) -> str:
+    """Shell script body for the namespace holder (must not ``exec`` a compound command)."""
+    pid_write = f"echo $$ > {shlex.quote(spawn_pid_file)}"
+    if IS_TERMUX:
+        termux_sleep = os.path.join(TERMUX_PREFIX, "bin", "sleep")
+        if os.path.isfile(termux_sleep):
+            # ``exec while …`` is invalid; run the loop in the shell (no exec).
+            return f"{pid_write}; while true; do {shlex.quote(termux_sleep)} 86400; done"
+    return f"{pid_write}; exec sleep infinity"
+
+
+def _read_spawn_holder_pid(spawn_pid_file: str) -> int | None:
+    if not os.path.isfile(spawn_pid_file):
+        return None
+    try:
+        with open(spawn_pid_file) as fh:
+            pid = int(fh.read().strip())
+    except (OSError, ValueError):
+        return None
+    if not _pid_alive(pid):
+        return None
+    return pid
+
+
+def _is_valid_holder_pid(pid: int) -> bool:
+    if not _pid_alive(pid):
+        return False
+    if _is_sleep_infinity_holder(pid):
+        return True
+    if IS_TERMUX:
+        return _proc_comm(pid) in ("sleep", "sh")
+    return False
 
 
 def _snapshot_sleep_infinity_pids() -> set[int]:
@@ -290,50 +362,91 @@ def get_live_holder(container_name: str) -> NamespaceHolder | None:
     )
 
 
-def _holder_unshare_argv(unshare: str, flags: list[str]) -> list[str]:
-    """Build unshare argv for a detached ``sleep infinity`` namespace holder."""
+def _holder_unshare_argv(unshare: str, flags: list[str], spawn_pid_file: str) -> list[str]:
+    """Build unshare argv for a detached namespace holder.
+
+    The inner shell writes its PID to *spawn_pid_file* before execing a blocking
+    sleep loop.  /proc scanning alone is unreliable on Android (Termux).
+    """
     argv = [unshare]
     if "--pid" in flags and "--fork" not in flags and "-f" not in flags:
         argv.append("--fork")
     argv.extend(flags)
-    argv.extend(["sleep", "infinity"])
+    script = _holder_inner_script(spawn_pid_file)
+    argv.extend([_resolve_holder_shell(), "-c", script])
     return argv
+
+
+def _wait_for_holder_pid(
+    *,
+    spawn_pid_file: str,
+    before_sleep: set[int],
+    launcher_pid: int,
+    proc: subprocess.Popen,
+    max_attempts: int = 150,
+) -> int | None:
+    for _ in range(max_attempts):
+        spawn_pid = _read_spawn_holder_pid(spawn_pid_file)
+        if spawn_pid is not None and _is_valid_holder_pid(spawn_pid):
+            return spawn_pid
+
+        scanned = _pick_new_holder_pid(before_sleep, launcher_pid=launcher_pid)
+        if scanned is not None and _is_valid_holder_pid(scanned):
+            return scanned
+
+        if proc.poll() is not None and proc.returncode not in (0, None):
+            break
+        time.sleep(0.02)
+    return None
 
 
 def _create_holder(container_name: str, flags: list[str]) -> NamespaceHolder:
     unshare = _resolve_unshare()
     pid_file = _holder_pid_file(container_name)
     flags_file = _holder_flags_file(container_name)
+    spawn_pid_file = _holder_spawn_pid_file(container_name)
 
     _remove_holder_state(container_name)
 
     before_sleep = _snapshot_sleep_infinity_pids()
-    unshare_argv = _holder_unshare_argv(unshare, flags)
+    unshare_argv = _holder_unshare_argv(unshare, flags, spawn_pid_file)
     proc = subprocess.Popen(
         unshare_argv,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         start_new_session=True,
     )
 
-    host_pid: int | None = None
-    for _ in range(100):
-        host_pid = _pick_new_holder_pid(before_sleep, launcher_pid=proc.pid)
-        if host_pid is not None:
-            break
-        if proc.poll() is not None and proc.returncode not in (0, None):
-            break
-        time.sleep(0.02)
+    host_pid = _wait_for_holder_pid(
+        spawn_pid_file=spawn_pid_file,
+        before_sleep=before_sleep,
+        launcher_pid=proc.pid,
+        proc=proc,
+    )
 
+    holder_stderr = ""
     if host_pid is None:
+        with contextlib.suppress(Exception):
+            if proc.stderr is not None:
+                _, err = proc.communicate(timeout=2)
+                holder_stderr = (err or b"").decode(errors="replace").strip()[:300]
         with contextlib.suppress(OSError):
             proc.kill()
-        raise NamespaceError("Failed to locate namespace holder process (sleep infinity) on the host.")
+        detail = f" unshare exited with {proc.returncode}." if proc.returncode else ""
+        if holder_stderr:
+            detail += f" {holder_stderr}"
+        raise NamespaceError(
+            "Failed to locate namespace holder process (sleep infinity) on the host."
+            + detail
+        )
 
-    if _proc_comm(host_pid) != "sleep":
+    with contextlib.suppress(OSError):
+        os.remove(spawn_pid_file)
+
+    if not _is_valid_holder_pid(host_pid):
         with contextlib.suppress(OSError):
             os.kill(host_pid, signal.SIGKILL)
-        raise NamespaceError(f"Namespace holder PID {host_pid} is not a sleep process.")
+        raise NamespaceError(f"Namespace holder PID {host_pid} is not a valid holder process.")
 
     with open(pid_file, "w") as fh:
         fh.write(str(host_pid))
