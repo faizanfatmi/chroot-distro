@@ -14,7 +14,7 @@ from chroot_distro.helpers.docker.transport import (
 )
 from chroot_distro.helpers.tar_extract import extract_tar_to_rootfs
 from chroot_distro.message import warn
-from chroot_distro.progress import AggregateByteProgress, REDRAW_THRESHOLD_BYTES, clear_bar, draw_bytes_bar
+from chroot_distro.progress import REDRAW_THRESHOLD_BYTES, AggregateByteProgress, clear_bar, draw_bytes_bar
 
 _MAX_RETRIES = 3
 _RETRY_BACKOFF = (2, 5, 10)  # seconds to wait between retries

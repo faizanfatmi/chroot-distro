@@ -169,9 +169,7 @@ def _read_holder_pid(container_name: str) -> int | None:
         return None
 
     is_valid = True
-    if not _pid_alive(pid):
-        is_valid = False
-    elif not _is_sleep_infinity_holder(pid):
+    if not _pid_alive(pid) or not _is_sleep_infinity_holder(pid):
         is_valid = False
     elif start_time is not None:
         curr_start_time = _get_process_start_time(pid)
@@ -381,6 +379,7 @@ def _create_holder(container_name: str, flags: list[str]) -> NamespaceHolder:
 
     nsenter = _resolve_nsenter()
     use_long = _nsenter_supports_long_flags(nsenter)
+    assert host_pid is not None
     return NamespaceHolder(
         pid=host_pid,
         nsenter_flags=long_flags_to_nsenter(flags, use_long=use_long),
