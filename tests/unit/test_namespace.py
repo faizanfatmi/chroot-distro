@@ -1,6 +1,6 @@
 """Unit tests for namespace isolation helpers."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
@@ -118,3 +118,80 @@ def test_acquire_holder_reuses_existing(mock_probe, mock_create, mock_get):
 def test_release_holder(mock_kill, *_mocks):
     ns.release_holder("alpine")
     assert mock_kill.called
+
+
+def test_get_process_start_time():
+    with patch("chroot_distro.helpers.namespace.os.stat") as mock_stat:
+        mock_stat.return_value = MagicMock(st_mtime=12345.67)
+        assert ns._get_process_start_time(42) == 12345.67
+
+    with patch("chroot_distro.helpers.namespace.os.stat", side_effect=OSError):
+        assert ns._get_process_start_time(42) is None
+
+
+@patch("chroot_distro.helpers.namespace._remove_holder_state")
+@patch("chroot_distro.helpers.namespace.os.path.isfile", return_value=True)
+def test_read_holder_pid_success(mock_isfile, mock_remove_state):
+    m_open = patch("builtins.open", mock_open(read_data="42\n12345.67\n")).start()
+    try:
+        with (
+            patch("chroot_distro.helpers.namespace._pid_alive", return_value=True),
+            patch("chroot_distro.helpers.namespace._is_sleep_infinity_holder", return_value=True),
+            patch("chroot_distro.helpers.namespace._get_process_start_time", return_value=12345.67),
+        ):
+            assert ns._read_holder_pid("alpine") == 42
+            mock_remove_state.assert_not_called()
+    finally:
+        patch.stopall()
+
+
+@patch("chroot_distro.helpers.namespace._remove_holder_state")
+@patch("chroot_distro.helpers.namespace.os.path.isfile", return_value=True)
+def test_read_holder_pid_stale_start_time(mock_isfile, mock_remove_state):
+    m_open = patch("builtins.open", mock_open(read_data="42\n12345.67\n")).start()
+    try:
+        with (
+            patch("chroot_distro.helpers.namespace._pid_alive", return_value=True),
+            patch("chroot_distro.helpers.namespace._is_sleep_infinity_holder", return_value=True),
+            patch("chroot_distro.helpers.namespace._get_process_start_time", return_value=99999.99),
+        ):
+            assert ns._read_holder_pid("alpine") is None
+            mock_remove_state.assert_called_once_with("alpine")
+    finally:
+        patch.stopall()
+
+
+@patch("chroot_distro.helpers.namespace._remove_holder_state")
+@patch("chroot_distro.helpers.namespace.os.path.isfile", return_value=True)
+def test_read_holder_pid_dead_process(mock_isfile, mock_remove_state):
+    m_open = patch("builtins.open", mock_open(read_data="42\n12345.67\n")).start()
+    try:
+        with (
+            patch("chroot_distro.helpers.namespace._pid_alive", return_value=False),
+        ):
+            assert ns._read_holder_pid("alpine") is None
+            mock_remove_state.assert_called_once_with("alpine")
+    finally:
+        patch.stopall()
+
+
+@patch("chroot_distro.helpers.namespace.subprocess.Popen")
+@patch("chroot_distro.helpers.namespace._pick_new_holder_pid", return_value=None)
+@patch("chroot_distro.helpers.namespace._remove_holder_state")
+def test_create_holder_fails_and_cleans_up(mock_remove_state, mock_pick, mock_popen):
+    mock_proc = MagicMock()
+    mock_popen.return_value = mock_proc
+
+    with pytest.raises(ns.NamespaceError, match="Failed to locate namespace holder"):
+        ns._create_holder("alpine", ["--mount"])
+
+    mock_proc.kill.assert_called_once()
+    mock_remove_state.assert_called()
+
+
+@patch("chroot_distro.helpers.namespace._remove_holder_state")
+@patch("chroot_distro.helpers.namespace._read_holder_pid", return_value=100)
+@patch("chroot_distro.helpers.namespace.os.kill", side_effect=OSError("Permission denied"))
+def test_release_holder_exception_safety(mock_kill, mock_read, mock_remove_state):
+    ns.release_holder("alpine")
+    mock_remove_state.assert_called_once_with("alpine")

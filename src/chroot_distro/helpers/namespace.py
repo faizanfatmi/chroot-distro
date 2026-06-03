@@ -139,19 +139,49 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _get_process_start_time(pid: int) -> float | None:
+    try:
+        return os.stat(f"/proc/{pid}").st_mtime
+    except OSError:
+        return None
+
+
 def _read_holder_pid(container_name: str) -> int | None:
     path = _holder_pid_file(container_name)
     if not os.path.isfile(path):
         return None
+
+    pid: int | None = None
+    start_time: float | None = None
     try:
         with open(path) as fh:
-            pid = int(fh.read().strip())
+            lines = fh.read().splitlines()
+            if lines:
+                pid = int(lines[0].strip())
+                if len(lines) > 1:
+                    start_time = float(lines[1].strip())
     except (OSError, ValueError):
+        _remove_holder_state(container_name)
         return None
+
+    if pid is None:
+        _remove_holder_state(container_name)
+        return None
+
+    is_valid = True
     if not _pid_alive(pid):
+        is_valid = False
+    elif not _is_sleep_infinity_holder(pid):
+        is_valid = False
+    elif start_time is not None:
+        curr_start_time = _get_process_start_time(pid)
+        if curr_start_time is None or abs(curr_start_time - start_time) > 0.1:
+            is_valid = False
+
+    if not is_valid:
+        _remove_holder_state(container_name)
         return None
-    if not _is_sleep_infinity_holder(pid):
-        return None
+
     return pid
 
 
@@ -312,29 +342,42 @@ def _create_holder(container_name: str, flags: list[str]) -> NamespaceHolder:
         start_new_session=True,
     )
 
+    success = False
     host_pid: int | None = None
-    for _ in range(100):
-        host_pid = _pick_new_holder_pid(before_sleep, launcher_pid=proc.pid)
-        if host_pid is not None:
-            break
-        if proc.poll() is not None and proc.returncode not in (0, None):
-            break
-        time.sleep(0.02)
+    try:
+        for _ in range(100):
+            host_pid = _pick_new_holder_pid(before_sleep, launcher_pid=proc.pid)
+            if host_pid is not None:
+                break
+            if proc.poll() is not None and proc.returncode not in (0, None):
+                break
+            time.sleep(0.02)
 
-    if host_pid is None:
-        with contextlib.suppress(OSError):
-            proc.kill()
-        raise NamespaceError("Failed to locate namespace holder process (sleep infinity) on the host.")
+        if host_pid is None:
+            raise NamespaceError("Failed to locate namespace holder process (sleep infinity) on the host.")
 
-    if _proc_comm(host_pid) != "sleep":
-        with contextlib.suppress(OSError):
-            os.kill(host_pid, signal.SIGKILL)
-        raise NamespaceError(f"Namespace holder PID {host_pid} is not a sleep process.")
+        if _proc_comm(host_pid) != "sleep":
+            raise NamespaceError(f"Namespace holder PID {host_pid} is not a sleep process.")
 
-    with open(pid_file, "w") as fh:
-        fh.write(str(host_pid))
-    with open(flags_file, "w") as fh:
-        fh.write(" ".join(flags))
+        start_time = _get_process_start_time(host_pid)
+        with open(pid_file, "w") as fh:
+            if start_time is not None:
+                fh.write(f"{host_pid}\n{start_time}\n")
+            else:
+                fh.write(f"{host_pid}\n")
+        with open(flags_file, "w") as fh:
+            fh.write(" ".join(flags))
+
+        success = True
+
+    finally:
+        if not success:
+            with contextlib.suppress(OSError):
+                proc.kill()
+            if host_pid is not None:
+                with contextlib.suppress(OSError):
+                    os.kill(host_pid, signal.SIGKILL)
+            _remove_holder_state(container_name)
 
     nsenter = _resolve_nsenter()
     use_long = _nsenter_supports_long_flags(nsenter)
@@ -357,18 +400,20 @@ def acquire_holder(container_name: str) -> NamespaceHolder:
 
 def release_holder(container_name: str) -> None:
     """Kill the namespace holder and remove state files."""
-    pid = _read_holder_pid(container_name)
-    if pid is not None:
-        with contextlib.suppress(OSError):
-            os.kill(pid, signal.SIGTERM)
-        for _ in range(10):
-            if not _pid_alive(pid):
-                break
-            time.sleep(0.05)
-        if _pid_alive(pid):
+    try:
+        pid = _read_holder_pid(container_name)
+        if pid is not None:
             with contextlib.suppress(OSError):
-                os.kill(pid, signal.SIGKILL)
-    _remove_holder_state(container_name)
+                os.kill(pid, signal.SIGTERM)
+            for _ in range(10):
+                if not _pid_alive(pid):
+                    break
+                time.sleep(0.05)
+            if _pid_alive(pid):
+                with contextlib.suppress(OSError):
+                    os.kill(pid, signal.SIGKILL)
+    finally:
+        _remove_holder_state(container_name)
 
 
 def make_mount_private(holder: NamespaceHolder) -> bool:
