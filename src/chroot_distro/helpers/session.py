@@ -1,5 +1,7 @@
+import contextlib
 import fcntl
 import os
+import typing
 
 from chroot_distro.constants import RUNTIME_DIR
 from chroot_distro.paths import container_rootfs
@@ -45,61 +47,89 @@ def get_active_chroot_pids(name: str) -> list[int]:
     return pids
 
 
-def increment(name: str) -> int:
+@contextlib.contextmanager
+def lock(name: str) -> typing.Iterator[typing.TextIO]:
+    """Acquire the session lock for a container."""
+    _, lock_file = _get_session_file_and_lock(name)
+    with open(lock_file, "w") as lock_fh:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX)
+        try:
+            yield lock_fh
+        finally:
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
+
+
+def _increment_inner(name: str, session_file: str) -> int:
+    count_val = 0
+    if os.path.exists(session_file):
+        try:
+            with open(session_file) as f:
+                count_val = int(f.read().strip() or 0)
+        except (ValueError, OSError):
+            count_val = 0
+
+    # Self-heal check: If process list is empty, count must be 0
+    if count_val > 0 and not get_active_chroot_pids(name):
+        count_val = 0
+
+    count_val += 1
+    with open(session_file, "w") as f:
+        f.write(str(count_val))
+
+    return count_val
+
+
+def increment(name: str, lock_fh: typing.IO | None = None) -> int:
     """Increment the active sessions count for a container and return the new count.
 
     Uses file locking to ensure safety across concurrent updates.
     """
     session_file, lock_file = _get_session_file_and_lock(name)
 
+    if lock_fh is not None:
+        return _increment_inner(name, session_file)
+
     with open(lock_file, "w") as lock_fh:
         fcntl.flock(lock_fh, fcntl.LOCK_EX)
-        count_val = 0
-        if os.path.exists(session_file):
-            try:
-                with open(session_file) as f:
-                    count_val = int(f.read().strip() or 0)
-            except (ValueError, OSError):
-                count_val = 0
+        res = _increment_inner(name, session_file)
+        fcntl.flock(lock_fh, fcntl.LOCK_UN)
+        return res
 
-        # Self-heal check: If process list is empty, count must be 0
-        if count_val > 0 and not get_active_chroot_pids(name):
+
+def _decrement_inner(name: str, session_file: str) -> int:
+    count_val = 0
+    if os.path.exists(session_file):
+        try:
+            with open(session_file) as f:
+                count_val = int(f.read().strip() or 0)
+        except (ValueError, OSError):
             count_val = 0
 
-        count_val += 1
-        with open(session_file, "w") as f:
-            f.write(str(count_val))
+    # Self-heal check: If process list is empty, count must be 0
+    active_pids = get_active_chroot_pids(name)
+    count_val = 0 if not active_pids else max(0, count_val - 1)
 
-        fcntl.flock(lock_fh, fcntl.LOCK_UN)
-        return count_val
+    with open(session_file, "w") as f:
+        f.write(str(count_val))
+
+    return count_val
 
 
-def decrement(name: str) -> int:
+def decrement(name: str, lock_fh: typing.IO | None = None) -> int:
     """Decrement the active sessions count for a container and return the new count.
 
     Uses file locking to ensure safety.
     """
     session_file, lock_file = _get_session_file_and_lock(name)
 
+    if lock_fh is not None:
+        return _decrement_inner(name, session_file)
+
     with open(lock_file, "w") as lock_fh:
         fcntl.flock(lock_fh, fcntl.LOCK_EX)
-        count_val = 0
-        if os.path.exists(session_file):
-            try:
-                with open(session_file) as f:
-                    count_val = int(f.read().strip() or 0)
-            except (ValueError, OSError):
-                count_val = 0
-
-        # Self-heal check: If process list is empty, count must be 0
-        active_pids = get_active_chroot_pids(name)
-        count_val = 0 if not active_pids else max(0, count_val - 1)
-
-        with open(session_file, "w") as f:
-            f.write(str(count_val))
-
+        res = _decrement_inner(name, session_file)
         fcntl.flock(lock_fh, fcntl.LOCK_UN)
-        return count_val
+        return res
 
 
 def count(name: str) -> int:

@@ -510,68 +510,69 @@ def _command_login_inner(container_name: str, args) -> None:
         sys.exit(1)
 
     # 2. Increment session counter and mount if first session
-    sess_count = session.increment(container_name)
-    if sess_count == 1:
-        if use_namespaces:
-            try:
-                holder = namespace.acquire_holder(container_name)
-                namespace.write_isolation_mode(container_name, namespace.ISOLATION_MODE_NAMESPACE)
-                if not namespace.make_mount_private(holder):
-                    warn("Failed to set mount propagation to rprivate in isolated namespace.")
-            except NamespaceError as exc:
-                session.decrement(container_name)
-                crit_error(str(exc))
-                sys.exit(1)
-        else:
-            namespace.write_isolation_mode(container_name, namespace.ISOLATION_MODE_HOST)
+    with session.lock(container_name) as lock_fh:
+        sess_count = session.increment(container_name, lock_fh=lock_fh)
+        if sess_count == 1:
+            if use_namespaces:
+                try:
+                    holder = namespace.acquire_holder(container_name)
+                    namespace.write_isolation_mode(container_name, namespace.ISOLATION_MODE_NAMESPACE)
+                    if not namespace.make_mount_private(holder):
+                        warn("Failed to set mount propagation to rprivate in isolated namespace.")
+                except NamespaceError as exc:
+                    session.decrement(container_name, lock_fh=lock_fh)
+                    crit_error(str(exc))
+                    sys.exit(1)
+            else:
+                namespace.write_isolation_mode(container_name, namespace.ISOLATION_MODE_HOST)
 
-        if IS_TERMUX and not isolated and not minimal:
-            ensure_data_suid()
-        # Pre-clean stale mounts if any
-        with contextlib.suppress(Exception):
-            mount_manager.unmount_all(rootfs, holder=holder)
-        # Phase 1: bind mounts
-        for src, dst in resolved_binds:
+            if IS_TERMUX and not isolated and not minimal:
+                ensure_data_suid()
+            # Pre-clean stale mounts if any
+            with contextlib.suppress(Exception):
+                mount_manager.unmount_all(rootfs, holder=holder)
+            # Phase 1: bind mounts
+            for src, dst in resolved_binds:
+                try:
+                    mount_manager.safe_mount(src, dst, holder=holder)
+                except Exception as e:
+                    mount_manager.unmount_all(rootfs, holder=holder)
+                    if holder is not None:
+                        namespace.release_holder(container_name)
+                        namespace.clear_isolation_mode(container_name)
+                    session.decrement(container_name, lock_fh=lock_fh)
+                    crit_error(f"Failed to mount bindings: {e}")
+                    sys.exit(1)
+
+            # Phase 2: special filesystem mounts
             try:
-                mount_manager.safe_mount(src, dst, holder=holder)
+                specials = bindings.get_special_mounts(
+                    rootfs,
+                    isolated=use_namespaces,
+                    enable_usb=not minimal,
+                    enable_binfmt=not minimal,
+                    enable_docker_cgroup=not minimal,
+                    enable_shm=not minimal,
+                )
+                for sm in specials:
+                    mount_manager.apply_special_mount(rootfs, sm, holder=holder)
             except Exception as e:
                 mount_manager.unmount_all(rootfs, holder=holder)
                 if holder is not None:
                     namespace.release_holder(container_name)
                     namespace.clear_isolation_mode(container_name)
-                session.decrement(container_name)
-                crit_error(f"Failed to mount bindings: {e}")
+                session.decrement(container_name, lock_fh=lock_fh)
+                crit_error(f"Failed to apply special mounts: {e}")
                 sys.exit(1)
-
-        # Phase 2: special filesystem mounts
-        try:
-            specials = bindings.get_special_mounts(
-                rootfs,
-                isolated=use_namespaces,
-                enable_usb=not minimal,
-                enable_binfmt=not minimal,
-                enable_docker_cgroup=not minimal,
-                enable_shm=not minimal,
-            )
-            for sm in specials:
-                mount_manager.apply_special_mount(rootfs, sm, holder=holder)
-        except Exception as e:
-            mount_manager.unmount_all(rootfs, holder=holder)
-            if holder is not None:
-                namespace.release_holder(container_name)
-                namespace.clear_isolation_mode(container_name)
-            session.decrement(container_name)
-            crit_error(f"Failed to apply special mounts: {e}")
-            sys.exit(1)
-    elif use_namespaces:
-        holder = namespace.get_live_holder(container_name)
-        if holder is None:
-            session.decrement(container_name)
-            crit_error(
-                f"Namespace holder for '{container_name}' is not running. "
-                f"Run '{PROGRAM_NAME} unmount {container_name}' and try again."
-            )
-            sys.exit(1)
+        elif use_namespaces:
+            holder = namespace.get_live_holder(container_name)
+            if holder is None:
+                session.decrement(container_name, lock_fh=lock_fh)
+                crit_error(
+                    f"Namespace holder for '{container_name}' is not running. "
+                    f"Run '{PROGRAM_NAME} unmount {container_name}' and try again."
+                )
+                sys.exit(1)
 
     chroot_args = build_chroot_args(
         rootfs=rootfs,
@@ -593,23 +594,25 @@ def _command_login_inner(container_name: str, args) -> None:
         parts.extend(shlex.quote(a) for a in exec_argv)
         print(" \\\n  ".join(parts))
 
-        sess_count = session.decrement(container_name)
-        if sess_count == 0:
-            mount_manager.unmount_all(rootfs, holder=holder)
-            if holder is not None:
-                namespace.release_holder(container_name)
-                namespace.clear_isolation_mode(container_name)
+        with session.lock(container_name) as lock_fh:
+            sess_count = session.decrement(container_name, lock_fh=lock_fh)
+            if sess_count == 0:
+                mount_manager.unmount_all(rootfs, holder=holder)
+                if holder is not None:
+                    namespace.release_holder(container_name)
+                    namespace.clear_isolation_mode(container_name)
         sys.exit(0)
 
     try:
         subprocess.run(exec_argv, env=child_env, check=False)
     finally:
-        sess_count = session.decrement(container_name)
-        if sess_count == 0:
-            mount_manager.unmount_all(rootfs, holder=holder)
-            if holder is not None:
-                namespace.release_holder(container_name)
-                namespace.clear_isolation_mode(container_name)
+        with session.lock(container_name) as lock_fh:
+            sess_count = session.decrement(container_name, lock_fh=lock_fh)
+            if sess_count == 0:
+                mount_manager.unmount_all(rootfs, holder=holder)
+                if holder is not None:
+                    namespace.release_holder(container_name)
+                    namespace.clear_isolation_mode(container_name)
 
 
 __all__ = ("command_login",)
