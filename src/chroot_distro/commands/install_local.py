@@ -4,7 +4,7 @@ import shutil
 import sys
 import tarfile
 
-from chroot_distro.atomic import atomic_replace
+from chroot_distro.atomic import atomic_write
 from chroot_distro.helpers.docker import (
     ARCH_TO_DOCKER,
     apply_layer,
@@ -126,7 +126,7 @@ def _oci_cache_layer(tf, member_map, digest):
         raise RuntimeError(f"OCI layer blob is not a regular file: {blob_path}")
     cache_path = layer_cache_path(digest)
     try:
-        with atomic_replace(cache_path) as tmp, open(tmp, "wb") as out:
+        with atomic_write(cache_path, binary=True) as out:
             shutil.copyfileobj(fobj, out)
     finally:
         fobj.close()

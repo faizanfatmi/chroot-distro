@@ -4,7 +4,7 @@ import os
 import tarfile
 import typing
 
-from chroot_distro.atomic import atomic_replace
+from chroot_distro.atomic import atomic_replace, atomic_write
 from chroot_distro.helpers.docker import (
     layer_cache_path,
     manifest_cache_path,
@@ -99,7 +99,7 @@ def store_in_cache(
         "repo": repo,
         "image_config": image_config,
     }
-    with atomic_replace(path) as tmp, open(tmp, "w") as fh:
+    with atomic_write(path) as fh:
         json.dump(payload, fh, indent=2, sort_keys=True)
     return path
 

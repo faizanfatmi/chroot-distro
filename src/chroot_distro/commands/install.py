@@ -8,7 +8,7 @@ import tarfile
 import tempfile
 
 from chroot_distro.arch import get_device_cpu_arch, normalize_arch
-from chroot_distro.atomic import atomic_replace
+from chroot_distro.atomic import atomic_write
 from chroot_distro.commands.install_local import install_from_local_file
 from chroot_distro.constants import BASE_CACHE_DIR, IS_TERMUX, PROGRAM_NAME
 from chroot_distro.helpers.android import configure_android_rootfs
@@ -211,7 +211,7 @@ def _run_install(
                 "image_config": metadata.get("image_config", {}),
             }
             try:
-                with atomic_replace(container_manifest(install_name), mode=0o644) as tmp, open(tmp, "w") as fh:
+                with atomic_write(container_manifest(install_name), mode=0o644) as fh:
                     json.dump(manifest_data, fh, indent=2)
             except OSError as exc:
                 log_error(f"Warning: could not write manifest.json: {exc}")

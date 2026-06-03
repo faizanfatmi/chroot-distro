@@ -62,6 +62,8 @@ def download_file(url: str, dest: str) -> None:
                     fh.write(chunk)
                     downloaded += len(chunk)
                     draw_bytes_bar(downloaded, total, noun="downloaded")
+                fh.flush()
+                os.fsync(fh.fileno())
             clear_bar()
             log_info(f"Finished downloading ({fmt_size(downloaded)}).")
             return

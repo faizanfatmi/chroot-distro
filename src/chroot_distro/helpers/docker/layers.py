@@ -100,6 +100,8 @@ def download_blob(
                             byte_progress.add(len(chunk))
                         else:
                             draw_bytes_bar(downloaded, total, noun="downloaded")
+                    fh.flush()
+                    os.fsync(fh.fileno())
                 actual_hex = hasher.hexdigest()
                 if actual_hex != expected_hex.lower():
                     raise RuntimeError(

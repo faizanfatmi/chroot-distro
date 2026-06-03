@@ -6,7 +6,7 @@ import os
 import time
 import typing
 
-from chroot_distro.atomic import atomic_replace
+from chroot_distro.atomic import atomic_write
 from chroot_distro.constants import BASE_CACHE_DIR
 
 _INDEX_PATH = os.path.join(BASE_CACHE_DIR, "build_cache_index.json")
@@ -60,7 +60,7 @@ def _load_index() -> dict[str, typing.Any]:
 
 
 def _save_index(data: dict[str, typing.Any]) -> None:
-    with atomic_replace(_INDEX_PATH) as tmp, open(tmp, "w") as fh:
+    with atomic_write(_INDEX_PATH) as fh:
         json.dump(data, fh, indent=2, sort_keys=True)
 
 

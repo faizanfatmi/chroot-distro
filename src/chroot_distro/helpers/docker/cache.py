@@ -3,7 +3,7 @@ import json
 import os
 import re
 
-from chroot_distro.atomic import atomic_replace
+from chroot_distro.atomic import atomic_write
 from chroot_distro.constants import LAYER_CACHE_DIR, MANIFEST_CACHE_DIR
 from chroot_distro.helpers.docker.refs import parse_image_ref
 
@@ -41,7 +41,7 @@ def save_manifest_cache(
 ) -> None:
     """Persist a manifest + image-config pair under the canonical cache key."""
     payload = {"manifest": manifest, "repo": repo, "image_config": image_config}
-    with atomic_replace(manifest_cache_path(image_ref, arch)) as tmp, open(tmp, "w") as fh:
+    with atomic_write(manifest_cache_path(image_ref, arch)) as fh:
         json.dump(payload, fh)
 
 
