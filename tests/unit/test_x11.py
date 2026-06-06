@@ -228,4 +228,3 @@ def test_get_host_env_var():
         patch("chroot_distro.helpers.x11.get_invoking_env", return_value={}),
     ):
         assert get_host_env_var("TEST_VAR", "fallback") == "fallback"
-

@@ -37,7 +37,6 @@ class AuthStrippingRedirectHandler(urllib.request.HTTPRedirectHandler):
         return new_req
 
 
-
 def auth_opener():
     """Build and return a new opener that strips Auth across hosts.
 

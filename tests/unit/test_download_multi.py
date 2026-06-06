@@ -106,9 +106,7 @@ class TestProbeServer:
         """HEAD returns 405 → fallback GET Range:0-0 → 206."""
         import urllib.error
 
-        head_exc = urllib.error.HTTPError(
-            "http://example.com/file.tar", 405, "Method Not Allowed", {}, None
-        )
+        head_exc = urllib.error.HTTPError("http://example.com/file.tar", 405, "Method Not Allowed", {}, None)
         get_resp = _FakeResp(
             status=206,
             headers={"Content-Range": "bytes 0-0/4096"},
@@ -207,7 +205,10 @@ class TestDownloadSegment:
         seg = _Segment(index=0, start=0, end=99, tmp_path=str(tmp_path / "chunk0.tmp"))
         resp = _FakeResp(status=200, body=b"x" * 100)
         abort = threading.Event()
-        with mock.patch("urllib.request.build_opener", return_value=self._mock_opener(resp)), pytest.raises(_RangeNotSupportedError):
+        with (
+            mock.patch("urllib.request.build_opener", return_value=self._mock_opener(resp)),
+            pytest.raises(_RangeNotSupportedError),
+        ):
             _download_segment(seg, "http://example.com/f", {}, None, abort)
 
     def test_size_mismatch_raises(self, tmp_path):
@@ -215,7 +216,10 @@ class TestDownloadSegment:
         # Only send 50 bytes but segment expects 100
         resp = _FakeResp(status=206, body=b"x" * 50)
         abort = threading.Event()
-        with mock.patch("urllib.request.build_opener", return_value=self._mock_opener(resp)), pytest.raises(RuntimeError, match="expected 100 bytes, got 50"):
+        with (
+            mock.patch("urllib.request.build_opener", return_value=self._mock_opener(resp)),
+            pytest.raises(RuntimeError, match="expected 100 bytes, got 50"),
+        ):
             _download_segment(seg, "http://example.com/f", {}, None, abort)
 
     def test_successful_download(self, tmp_path):
@@ -241,7 +245,10 @@ class TestDownloadSegment:
         abort = threading.Event()
         abort.set()  # pre-set abort
 
-        with mock.patch("urllib.request.build_opener", return_value=self._mock_opener(resp)), pytest.raises(KeyboardInterrupt):
+        with (
+            mock.patch("urllib.request.build_opener", return_value=self._mock_opener(resp)),
+            pytest.raises(KeyboardInterrupt),
+        ):
             _download_segment(seg, "http://example.com/f", {}, None, abort)
 
 
@@ -334,7 +341,7 @@ class TestDownloadFile:
     def test_download_file_resume(self, tmp_path):
         dest = str(tmp_path / "output.tar")
         content = b"X" * (8 * 1024 * 1024)
-        
+
         probe_result = _ProbeResult(
             content_length=len(content),
             final_url="http://cdn.example.com/final.tar",
@@ -347,15 +354,18 @@ class TestDownloadFile:
             if range_header == "bytes=0-4194303":
                 return _FakeResp(status=206, body=b"X" * (4 * 1024 * 1024))
             elif range_header == "bytes=4194304-8388607":
+
                 class BrokenStream:
                     def __init__(self):
                         self.bytes_read = 0
+
                     def read(self, n):
                         if self.bytes_read >= 1024 * 1024:
                             raise ConnectionResetError("Connection reset by peer")
                         chunk = b"X" * min(n, 1024 * 1024 - self.bytes_read)
                         self.bytes_read += len(chunk)
                         return chunk
+
                 resp = _FakeResp(status=206)
                 resp._body = BrokenStream()
                 return resp
@@ -382,6 +392,7 @@ class TestDownloadFile:
 
         # 2nd run: resume and complete
         captured_ranges = []
+
         def mock_open_second(req, *args, **kwargs):
             range_header = req.headers.get("Range", "")
             captured_ranges.append(range_header)

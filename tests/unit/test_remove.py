@@ -46,7 +46,16 @@ def test_remove_container_not_installed(mock_crit_error, mock_isdir, mock_rootfs
 @patch("chroot_distro.commands.remove.log_info")
 @patch("os.unlink")
 def test_remove_no_active_sessions_or_mounts(
-    mock_unlink, mock_log, mock_remove_path, mock_mount, mock_session, mock_lock, mock_isdir, mock_dir, mock_rootfs, *_mocks
+    mock_unlink,
+    mock_log,
+    mock_remove_path,
+    mock_mount,
+    mock_session,
+    mock_lock,
+    mock_isdir,
+    mock_dir,
+    mock_rootfs,
+    *_mocks,
 ):
     args = MagicMock()
     args.container_name = "alpine"

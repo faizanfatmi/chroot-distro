@@ -145,7 +145,7 @@ def _exec_chroot(engine: typing.Any, stage: typing.Any, command: list[str], stdi
 
     try:
         for src, dst in resolved_binds:
-            is_run = (os.path.realpath(dst) == os.path.realpath(os.path.join(rootfs, "run")))
+            is_run = os.path.realpath(dst) == os.path.realpath(os.path.join(rootfs, "run"))
             mount_manager.safe_mount(src, dst, recursive=is_run)
 
         stdin_arg = subprocess.PIPE if stdin_input is not None else subprocess.DEVNULL

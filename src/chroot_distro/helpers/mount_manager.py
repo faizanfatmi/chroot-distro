@@ -139,9 +139,7 @@ def make_rslave(target: str, holder: NamespaceHolder | None = None) -> bool:
     if not is_mounted(target_abs, holder=holder):
         return False
     try:
-        result = _run_mount_cmd(
-            ["mount", "--make-rslave", target_abs], holder
-        )
+        result = _run_mount_cmd(["mount", "--make-rslave", target_abs], holder)
         if result.returncode != 0:
             log.debug(
                 "make-rslave failed for %s: %s",

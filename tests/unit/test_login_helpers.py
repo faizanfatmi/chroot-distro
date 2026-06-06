@@ -98,7 +98,9 @@ def test_get_bindings_home_sharing():
 
     # 1b. Root with --shared-home: host home bind-mounted to /root
     with patch("os.path.exists", return_value=True), patch("chroot_distro.commands.login.bindings.IS_TERMUX", False):
-        binds, _ = get_bindings(rootfs="/fake/rootfs", minimal=False, isolated=False, shared_home=True, login_home="/root")
+        binds, _ = get_bindings(
+            rootfs="/fake/rootfs", minimal=False, isolated=False, shared_home=True, login_home="/root"
+        )
         home_binds = [dst for src, dst in binds if dst.endswith("/root")]
         assert len(home_binds) == 1
 

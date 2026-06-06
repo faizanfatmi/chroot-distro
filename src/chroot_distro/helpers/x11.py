@@ -20,12 +20,14 @@ def resolve_invoking_uid() -> int:
     return os.getuid()
 
 
-_INVOKING_ENV_CACHE: dict[str, str] | None = None
+class _EnvCache:
+    """Module-level cache for invoking environment."""
+    value: dict[str, str] | None = None
 
 
 def _get_ppid(pid: int) -> int | None:
     try:
-        with open(f"/proc/{pid}/stat", "r") as f:
+        with open(f"/proc/{pid}/stat") as f:
             stat = f.read()
         rpar = stat.rfind(")")
         if rpar == -1:
@@ -38,12 +40,11 @@ def _get_ppid(pid: int) -> int | None:
 
 def get_invoking_env() -> dict[str, str]:
     """Walk up process tree to find first process owned by invoking UID, return its env."""
-    global _INVOKING_ENV_CACHE
-    if _INVOKING_ENV_CACHE is not None:
-        return _INVOKING_ENV_CACHE
+    if _EnvCache.value is not None:
+        return _EnvCache.value
 
     invoking_uid = resolve_invoking_uid()
-    pid = os.getpid()
+    pid: int | None = os.getpid()
     while pid and pid > 1:
         try:
             uid = os.stat(f"/proc/{pid}").st_uid
@@ -55,12 +56,12 @@ def get_invoking_env() -> dict[str, str]:
                     if b"=" in line:
                         k, v = line.split(b"=", 1)
                         env[k.decode("utf-8", errors="replace")] = v.decode("utf-8", errors="replace")
-                _INVOKING_ENV_CACHE = env
+                _EnvCache.value = env
                 return env
         except Exception:
             pass
         pid = _get_ppid(pid)
-    _INVOKING_ENV_CACHE = {}
+    _EnvCache.value = {}
     return {}
 
 

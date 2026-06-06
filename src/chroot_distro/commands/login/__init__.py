@@ -37,8 +37,8 @@ from chroot_distro.constants import (
     TERMUX_PREFIX,
 )
 from chroot_distro.helpers.android import ensure_data_suid, termux_home_owner_ids
-from chroot_distro.helpers.namespace import NamespaceError
 from chroot_distro.helpers.display import resolve_display_env
+from chroot_distro.helpers.namespace import NamespaceError
 from chroot_distro.helpers.x11 import (
     guest_can_read_auth,
     provision_guest_xauthority,
@@ -534,7 +534,7 @@ def _command_login_inner(container_name: str, args) -> None:
             # Phase 1: bind mounts
             for src, dst in resolved_binds:
                 try:
-                    is_run = (os.path.realpath(dst) == os.path.realpath(os.path.join(rootfs, "run")))
+                    is_run = os.path.realpath(dst) == os.path.realpath(os.path.join(rootfs, "run"))
                     mount_manager.safe_mount(src, dst, holder=holder, recursive=is_run)
                 except Exception as e:
                     mount_manager.unmount_all(rootfs, holder=holder)
@@ -556,10 +556,8 @@ def _command_login_inner(container_name: str, args) -> None:
             if IS_TERMUX and shared_tmp and dist_type != "termux":
                 chroot_tmp = os.path.join(rootfs, "tmp")
                 if os.path.isdir(chroot_tmp):
-                    try:
+                    with contextlib.suppress(OSError):
                         os.chmod(chroot_tmp, 0o1777)
-                    except OSError:
-                        pass
 
             # Phase 2: special filesystem mounts
             try:

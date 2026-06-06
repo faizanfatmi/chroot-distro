@@ -99,6 +99,7 @@ def test_extract_tar_preserves_ownership(mock_lchown):
 
 def test_extract_tar_zst_to_rootfs():
     import sys
+
     if sys.version_info >= (3, 14):
         from compression import zstd
     else:

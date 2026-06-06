@@ -16,9 +16,9 @@ from chroot_distro.helpers.docker.layers import (
     download_blob,
 )
 from chroot_distro.helpers.download import (
+    _FallbackToSingleError,
     _ProbeResult,
     _Segment,
-    _FallbackToSingleError,
 )
 
 # ---------------------------------------------------------------------------
@@ -99,9 +99,7 @@ class TestProbeBlob:
 
     def test_head_405_fallback_to_get(self):
         """HEAD returns 405 -> fallback GET Range:0-0 -> 206."""
-        head_exc = urllib.error.HTTPError(
-            "https://registry-1.docker.io/v2/f", 405, "Method Not Allowed", {}, None
-        )
+        head_exc = urllib.error.HTTPError("https://registry-1.docker.io/v2/f", 405, "Method Not Allowed", {}, None)
         get_resp = _FakeResp(
             status=206,
             headers={"Content-Range": "bytes 0-0/4096"},
@@ -153,6 +151,7 @@ class TestDownloadBlobSegmented:
         digest, path = mock_cache_path
         content = b"A" * (8 * 1024 * 1024)  # 8 MiB (forces 2 segments of 4MiB)
         import hashlib
+
         expected_hex = hashlib.sha256(content).hexdigest()
         digest = f"sha256:{expected_hex}"
         path = str(tmp_path / f"layer_{expected_hex}")
@@ -167,7 +166,7 @@ class TestDownloadBlobSegmented:
             # Mock _download_segment to write part of the content to seg.tmp_path
             def mock_download_segment(seg, url, headers, progress, abort):
                 with open(seg.tmp_path, "wb") as f:
-                    f.write(content[seg.start:seg.end + 1])
+                    f.write(content[seg.start : seg.end + 1])
 
             with (
                 mock.patch("chroot_distro.helpers.docker.layers._probe_blob", return_value=probe_result),
@@ -190,6 +189,7 @@ class TestDownloadBlobSegmented:
         content = b"A" * (8 * 1024 * 1024)
         # Expected hash is correct for b"A" * 8MiB, but we will write different data to cause validation error
         import hashlib
+
         expected_hex = hashlib.sha256(content).hexdigest()
         digest = f"sha256:{expected_hex}"
         path = str(tmp_path / f"layer_{expected_hex}")
@@ -208,7 +208,9 @@ class TestDownloadBlobSegmented:
 
             with (
                 mock.patch("chroot_distro.helpers.docker.layers._probe_blob", return_value=probe_result),
-                mock.patch("chroot_distro.helpers.docker.layers._download_segment", side_effect=mock_download_segment_bad),
+                mock.patch(
+                    "chroot_distro.helpers.docker.layers._download_segment", side_effect=mock_download_segment_bad
+                ),
             ):
                 with pytest.raises(RuntimeError, match="Layer integrity check failed"):
                     download_blob(
@@ -224,6 +226,7 @@ class TestDownloadBlobSegmented:
         digest, path = mock_cache_path
         content = b"A" * (8 * 1024 * 1024)
         import hashlib
+
         expected_hex = hashlib.sha256(content).hexdigest()
         digest = f"sha256:{expected_hex}"
         path = str(tmp_path / f"layer_{expected_hex}")
@@ -241,7 +244,7 @@ class TestDownloadBlobSegmented:
             def mock_dl_segment(seg, url, headers, progress, abort):
                 captured_headers.append(headers)
                 with open(seg.tmp_path, "wb") as f:
-                    f.write(content[seg.start:seg.end + 1])
+                    f.write(content[seg.start : seg.end + 1])
 
             with (
                 mock.patch("chroot_distro.helpers.docker.layers._probe_blob", return_value=probe_cross_host),
@@ -253,7 +256,7 @@ class TestDownloadBlobSegmented:
                     token="my_secret_token",
                     connections=2,
                 )
-            
+
             for h in captured_headers:
                 assert "Authorization" not in h
 
@@ -283,6 +286,7 @@ class TestDownloadBlobSegmented:
         digest, path = mock_cache_path
         content = b"A" * 100
         import hashlib
+
         expected_hex = hashlib.sha256(content).hexdigest()
         digest = f"sha256:{expected_hex}"
         path = str(tmp_path / f"layer_{expected_hex}")
@@ -324,6 +328,7 @@ class TestDownloadBlobSegmented:
         digest, path = mock_cache_path
         content = b"A" * (8 * 1024 * 1024)  # 8 MiB (forces 2 segments of 4MiB: 0-4194303, 4194304-8388607)
         import hashlib
+
         expected_hex = hashlib.sha256(content).hexdigest()
         digest = f"sha256:{expected_hex}"
         path = str(tmp_path / f"layer_{expected_hex}")
@@ -341,15 +346,18 @@ class TestDownloadBlobSegmented:
                 if range_header == "bytes=0-4194303":
                     return _FakeResp(status=206, body=b"A" * (4 * 1024 * 1024))
                 elif range_header == "bytes=4194304-8388607":
+
                     class BrokenStream:
                         def __init__(self):
                             self.bytes_read = 0
+
                         def read(self, n):
                             if self.bytes_read >= 1024 * 1024:
                                 raise ConnectionResetError("Connection reset by peer")
                             chunk = b"A" * min(n, 1024 * 1024 - self.bytes_read)
                             self.bytes_read += len(chunk)
                             return chunk
+
                     resp = _FakeResp(status=206)
                     resp._body = BrokenStream()
                     return resp
@@ -381,6 +389,7 @@ class TestDownloadBlobSegmented:
 
             # Second run: resumes. Check that segment 1 is requested with correct range.
             captured_ranges = []
+
             def mock_open_second(req, *args, **kwargs):
                 range_header = req.headers.get("Range", "")
                 captured_ranges.append(range_header)

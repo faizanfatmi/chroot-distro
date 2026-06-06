@@ -173,6 +173,7 @@ def test_backup_and_restore_zstd(
             assert f"{container_name}/rootfs/bin_link" in names
 
         import shutil
+
         shutil.rmtree(cont_dir)
         assert not cont_dir.exists()
 

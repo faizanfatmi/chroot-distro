@@ -47,16 +47,21 @@ def test_progress_active():
 @patch("sys.stderr.flush")
 def test_draw_bytes_bar_tty(mock_flush, mock_write, mock_tty_safe, mock_active):
     from chroot_distro.message import _COLORS
+
     with patch("sys.stderr.isatty", return_value=True), patch("chroot_distro.progress.C", _COLORS):
         # TTY with total
         draw_bytes_bar(50, 100, label="test", noun="downloaded")
-        mock_write.assert_called_with("\r\x1b[0m\x1b[34m[\x1b[0m\x1b[32m*\x1b[0m\x1b[34m] \x1b[0m\x1b[36mtest: [##########----------]  50%  50 B / 100 B\x1b[K\x1b[0m")
+        mock_write.assert_called_with(
+            "\r\x1b[0m\x1b[34m[\x1b[0m\x1b[32m*\x1b[0m\x1b[34m] \x1b[0m\x1b[36mtest: [##########----------]  50%  50 B / 100 B\x1b[K\x1b[0m"
+        )
         mock_flush.assert_called()
 
         mock_write.reset_mock()
         # TTY without total
         draw_bytes_bar(50, 0, label="test", noun="downloaded")
-        mock_write.assert_called_with("\r\x1b[0m\x1b[34m[\x1b[0m\x1b[32m*\x1b[0m\x1b[34m] \x1b[0m\x1b[36mtest: 50 B downloaded...\x1b[K\x1b[0m")
+        mock_write.assert_called_with(
+            "\r\x1b[0m\x1b[34m[\x1b[0m\x1b[32m*\x1b[0m\x1b[34m] \x1b[0m\x1b[36mtest: 50 B downloaded...\x1b[K\x1b[0m"
+        )
 
 
 @patch("chroot_distro.progress.progress_active", return_value=True)
