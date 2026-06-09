@@ -49,6 +49,12 @@ IMAGE_ENV_BLOCKED = frozenset(
         "XDG_SESSION_TYPE",
         "XDG_CURRENT_DESKTOP",
         "DESKTOP_SESSION",
+        # NVIDIA / GPU — set at login time based on auto-detection
+        "GALLIUM_DRIVER",
+        "MESA_D3D12_DEFAULT_DEVICE_TYPE",
+        "LIBGL_ALWAYS_SOFTWARE",
+        "__NV_PRIME_RENDER_OFFLOAD",
+        "__GLX_VENDOR_LIBRARY_NAME",
     }
 )
 
@@ -74,6 +80,12 @@ _PROFILE_INJECT_SKIP = frozenset(
         "XDG_SESSION_TYPE",
         "XDG_CURRENT_DESKTOP",
         "DESKTOP_SESSION",
+        # NVIDIA / GPU — per-session, set by auto-detection
+        "GALLIUM_DRIVER",
+        "MESA_D3D12_DEFAULT_DEVICE_TYPE",
+        "LIBGL_ALWAYS_SOFTWARE",
+        "__NV_PRIME_RENDER_OFFLOAD",
+        "__GLX_VENDOR_LIBRARY_NAME",
     }
 )
 

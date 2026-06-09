@@ -894,6 +894,14 @@ detected at login by reading ELF headers of common shell binaries. Cross-arch
 execution uses **QEMU user-mode** via `binfmt_misc` / QEMU user binaries
 installed on the host.
 
+### 3. GPU Acceleration
+
+Chroot-Distro automatically enables hardware-accelerated 3D rendering for various GPU vendors:
+
+- **AMD & Intel GPU support**: Works out of the box! Since the host's `/dev` directory (including `/dev/dri/` render nodes) is mounted into the container, standard open-source Mesa drivers inside the guest can directly access AMD and Intel graphics hardware.
+- **NVIDIA GPU support (Standard Linux hosts)**: Automatically scans the host system for NVIDIA hardware, resolves all required device nodes (`/dev/nvidia*`), EGL/Vulkan ICD configurations, dynamic libraries, and CLI tools (such as `nvidia-smi`), bind-mounting them directly inside the container and refreshing the guest's dynamic linker cache.
+- **WSL2 support**: Automatically detects WSL2 virtualized GPU environments, recursively bind-mounts the host's `/usr/lib/wsl` folder (bringing in both the library overlay and the 9p driver filesystem), maps the `/dev/dxg` device, configures the linker cache (`ldconfig`) to search `/usr/lib/wsl/lib`, and sets up the required environment variables (`GALLIUM_DRIVER=d3d12`, etc.) inside the container.
+
 ---
 
 ## Storage layout

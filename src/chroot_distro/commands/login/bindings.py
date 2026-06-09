@@ -9,6 +9,7 @@ from chroot_distro.constants import (
     TERMUX_HOME,
     TERMUX_PREFIX,
 )
+from chroot_distro.helpers import nvidia as nvidia_helper
 
 log = logging.getLogger(__name__)
 
@@ -342,6 +343,7 @@ def get_bindings(
     login_home: str = "/root",
     login_user: str = "root",
     dist_type: str = "normal",
+    nvidia_integration: bool = False,
 ) -> tuple[list[tuple[str, str]], list[str]]:
     """Assemble all (source, target_in_rootfs) bind mounts based on configurations.
 
@@ -434,7 +436,16 @@ def get_bindings(
                 binds.append((path, path))
                 bound_srcs.add(path)
 
-    # 6. Custom binds specified by the user
+    # 6. NVIDIA GPU integration (device nodes, libraries, configs, binaries)
+    if nvidia_integration:
+        nvidia_binds, _nvidia_env = nvidia_helper.get_nvidia_integration(rootfs)
+        bound_srcs = {src for src, _ in binds}
+        for src, dst in nvidia_binds:
+            if src not in bound_srcs and os.path.exists(src):
+                binds.append((src, dst))
+                bound_srcs.add(src)
+
+    # 7. Custom binds specified by the user
     # Format: host_path:guest_path or host_path
     if custom_binds:
         for b in custom_binds:

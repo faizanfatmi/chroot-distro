@@ -39,6 +39,11 @@ from chroot_distro.constants import (
 from chroot_distro.helpers.android import ensure_data_suid, termux_home_owner_ids
 from chroot_distro.helpers.display import resolve_display_env
 from chroot_distro.helpers.namespace import NamespaceError
+from chroot_distro.helpers.nvidia import (
+    detect_nvidia_gpu,
+    nvidia_env_vars,
+    run_ldconfig_in_chroot,
+)
 from chroot_distro.helpers.x11 import (
     guest_can_read_auth,
     provision_guest_xauthority,
@@ -296,6 +301,11 @@ def _command_login_inner(container_name: str, args) -> None:
     login_cmd = getattr(args, "login_cmd", []) or []
     run_inner = getattr(args, "_run_inner", None)
 
+    # Auto-detect NVIDIA GPU on the host (not relevant for Termux)
+    has_nvidia = False
+    if not IS_TERMUX and not minimal:
+        has_nvidia = detect_nvidia_gpu()
+
     if dist_type == "termux":
         if not login_wd:
             login_wd = TERMUX_HOME
@@ -503,7 +513,15 @@ def _command_login_inner(container_name: str, args) -> None:
         login_home=login_home or "/root",
         login_user=login_user,
         dist_type=dist_type,
+        nvidia_integration=has_nvidia,
     )
+
+    # Merge NVIDIA env vars into child_env (before user overrides)
+    if has_nvidia:
+        user_env_keys_all = {entry.partition("=")[0] for entry in extra_env if "=" in entry}
+        for key, val in nvidia_env_vars().items():
+            if key not in user_env_keys_all:
+                child_env[key] = val
 
     use_namespaces = isolated and not minimal
     holder = None
@@ -545,7 +563,8 @@ def _command_login_inner(container_name: str, args) -> None:
             for src, dst in resolved_binds:
                 try:
                     is_run = os.path.realpath(dst) == os.path.realpath(os.path.join(rootfs, "run"))
-                    mount_manager.safe_mount(src, dst, holder=holder, recursive=is_run)
+                    is_wsl = src == "/usr/lib/wsl"
+                    mount_manager.safe_mount(src, dst, holder=holder, recursive=(is_run or is_wsl))
                 except Exception as e:
                     mount_manager.unmount_all(rootfs, holder=holder)
                     if holder is not None:
@@ -589,6 +608,10 @@ def _command_login_inner(container_name: str, args) -> None:
                 session.decrement(container_name, lock_fh=lock_fh)
                 crit_error(f"Failed to apply special mounts: {e}")
                 sys.exit(1)
+
+            # Phase 3: NVIDIA ldconfig refresh
+            if has_nvidia:
+                run_ldconfig_in_chroot(rootfs)
         elif use_namespaces:
             holder = namespace.get_live_holder(container_name)
             if holder is None:
